@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- アイコンの地の紺。前景ビットマップの中間色に合わせてあるので、
+         視差で前景がずれても色が飛ばない -->
+    <color name="ic_launcher_background">#131D40</color>
+</resources>

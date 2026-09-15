@@ -1,0 +1,7 @@
+.gradle/
+build/
+# SDK の場所はマシン固有
+local.properties
+*.iml
+.idea/
+.DS_Store
