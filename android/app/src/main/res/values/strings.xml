@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ContextCap</string>
+    <string name="accessibility_description">画面を 10 秒ごとに撮影して端末内に保存します。操作の代行や送信は行いません。</string>
+</resources>

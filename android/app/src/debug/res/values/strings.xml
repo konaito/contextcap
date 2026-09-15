@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- debug ビルド専用。FLAG_SECURE の挙動を確かめる画面で使う -->
+<resources>
+    <string name="secure_test_title">FLAG_SECURE テスト画面</string>
+    <string name="secure_test_body">この画面が写った JPEG が保存されていたら、FLAG_SECURE の扱いが壊れている。</string>
+</resources>

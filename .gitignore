@@ -1,0 +1,16 @@
+.DS_Store
+
+# Swift (macOS 版)
+.build/
+macos/build/
+*.xcodeproj
+*.xcworkspace
+
+# 撮影データはリポジトリに入れない。
+# macOS 版は ~/ContextCap/、Android 版は端末内に保存される。
+# 回収した snapshot をここに置く場合は PII を含む前提で扱うこと。
+/snapshot/
+/snapshots/
+
+# Claude Code のワークツリー（リポジトリ丸ごとのコピーが入る）
+.claude/

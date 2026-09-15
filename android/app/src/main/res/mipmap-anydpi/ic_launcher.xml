@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  前景は不透明のビットマップ（scripts/make-android-icon.py が assets/icon.png から生成）。
+  地の紺を 108dp 全面に敷いてあるので、ランチャーのマスク形状が何であっても紺が途切れない。
+  背景レイヤーの色は、視差でずれた時に同じ紺が出るように前景と揃えている。
+
+  monochrome だけは別のベクタ。テーマアイコンは alpha だけを使って系統色で塗られるため、
+  写実的な前景をそのまま渡しても潰れる。単色向けの図形を別に持つ。
+-->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
+</adaptive-icon>
