@@ -70,7 +70,7 @@ cd android
   `Retention` が保持期間超と容量超過分を古い順に削除する。**OCR 済みでない画像は消さない。**
   適応撮影プロファイル（`CaptureGeneration`）も廃止した — 一度深い段が採用されると
   新規撮影まで劣化し、実際 macOS では gen0 が 1 枚も撮られない状態が続いていた
-- 非対称なのは OCR エンジンと保持期間だけ。macOS = Apple Vision / `ocr.sqlite` / 4 日 / 40GB、
+- 非対称なのは OCR エンジンと保持期間だけ。macOS = Apple Vision / `ocr.sqlite` / 3 日 / 40GB、
   Android = ML Kit 日本語 bundled / `<day>/ocr.jsonl` / 14 日 / 10GB。
   1 枚が 813KB（3600px）と 95.3KB（1080x2400）で桁が違うため
 - 廃止の根拠は同一画像の統制実験（60 枚・`lines` 分位で層化・単スレッド計測）。

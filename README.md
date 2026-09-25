@@ -16,7 +16,7 @@ macOS 版と Android 版があり、**保存ファイルの命名規約が同一
 | ディレクトリ | [`macos/`](./macos/) | [`android/`](./android/) |
 | 撮影間隔 | 5 秒 | 10 秒 |
 | 撮影手段 | ScreenCaptureKit | `AccessibilityService.takeScreenshot()` |
-| 容量上限 | 40GB（超過分と 4 日超を削除。再圧縮しない） | 10GB（超過分と 14 日超を削除。再圧縮しない） |
+| 容量上限 | 40GB（超過分と 3 日超を削除。再圧縮しない） | 10GB（超過分と 14 日超を削除。再圧縮しない） |
 | OCR | 撮影直後に Apple Vision | 撮影直後に ML Kit（日本語・bundled） |
 | 常駐 | メニューバー（`LSUIElement`） | AccessibilityService（常駐通知なし） |
 | 画面 | メニューバーのポップアップのみ | ホーム + 全画面ビューアの 2 画面 |
@@ -56,7 +56,7 @@ Compose に一切依存しない**。UI を落としても記録は動く。
 | OCR | Apple Vision | ML Kit Text Recognition v2（日本語・bundled） |
 | 出力 | `~/ContextCap-analysis/ocr.sqlite` | `<day>/ocr.jsonl` |
 | 1 枚 | 813KB（3600px） | 95.3KB（1080x2400） |
-| 上限 / 保持 | 40GB / 4 日 | 10GB / 14 日 |
+| 上限 / 保持 | 40GB / 3 日 | 10GB / 14 日 |
 | スループット | 1.72 枚/秒（撮影の 8.6 倍） | 7.7 枚/秒（撮影の 77 倍・エミュレータ実測） |
 
 どちらもキューは 2 段（撮影直後を優先、追いつきは暇な時だけ）で、**並列にしない**。

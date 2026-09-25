@@ -23,7 +23,7 @@ struct RetentionTest {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("retention-test-\(ProcessInfo.processInfo.processIdentifier)")
 
-        let oldDay = dayString(daysAgo: 10)   // 4 日を大きく超える
+        let oldDay = dayString(daysAgo: 10)   // 3 日を大きく超える
         let newDay = dayString(daysAgo: 0)    // 保持期間内
 
         let oldIndexed   = make(root, oldDay, "120000_000")     // 古い・OCR済み  → 消えるべき
