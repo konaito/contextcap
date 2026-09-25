@@ -118,11 +118,12 @@ final class OCRIndexer: @unchecked Sendable {
     }
 
     /// Retention のガード用。OCR 済み（ok / empty どちらでも）のキー集合。
+    /// **failed は含めない。**テキストが取れていないので、消したら永久に失われる。
     /// 5 分に 1 回しか呼ばれないので全件取得で足りる。
     func indexedKeys() -> Set<String> {
         queue.sync {
             guard let store = openStoreIfNeeded() else { return [] }
-            return store.existingKeys()
+            return store.existingKeys(excludingFailed: true)
         }
     }
 
@@ -313,10 +314,13 @@ private final class OCRStore {
         sqlite3_exec(db, sql, nil, nil, nil)
     }
 
-    func existingKeys() -> Set<String> {
+    func existingKeys(excludingFailed: Bool = false) -> Set<String> {
         var set = Set<String>()
         var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, "SELECT day, base FROM shots;", -1, &stmt, nil) == SQLITE_OK
+        let sql = excludingFailed
+            ? "SELECT day, base FROM shots WHERE status != 'failed';"
+            : "SELECT day, base FROM shots;"
+        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK
         else { return set }
         defer { sqlite3_finalize(stmt) }
         while sqlite3_step(stmt) == SQLITE_ROW {
