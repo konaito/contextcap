@@ -3,7 +3,8 @@
 あとで解析するための画面記録を溜めておく常駐スクリーンショットレコーダー。
 5 秒に 1 回、プライマリディスプレイ全体を撮影してローカルに溜め続けるだけの macOS メニューバーアプリ。
 
-- クリック・入力・送信などの操作は一切しない。撮って保存するだけ
+- クリック・送信などの操作（自動化）は一切しない。撮って保存するだけ
+- キー入力（押下）と使用ショートカットを `keys.jsonl` に記録する。入力を代行するわけではなく、観測して残すだけ
 - ネットワーク送信なし。**すべてローカル保存**（アップロード機構を持たない）
 - 撮るのはプライマリディスプレイ全体。アクティブウィンドウの切り抜きではない
 
@@ -20,6 +21,7 @@
 | 重複スキップ | なし（正解データ用途なので間引かず全部残す） |
 | 黒画面 | 全面が黒いフレームは**保存せずに捨て**、区間だけ `blackouts.jsonl` に残す |
 | 途切れの記録 | スリープ・消灯・ロック・撮影失敗・起動終了を `gaps.jsonl` に残す |
+| キー記録 | キー押下と修飾キー（ショートカット）を前面アプリ付きで `<day>/keys.jsonl` に残す。押下のみ・保持無期限・要アクセシビリティ権限 |
 | UI | メニューバー常駐のみ（Dock に出ない = `LSUIElement`） |
 | 自動起動 | ログイン時に自動起動（`SMAppService`、アプリ内トグルで ON/OFF） |
 
@@ -105,6 +107,39 @@ defaults write app.imichat.contextcap StorageBudgetGB -float 0.03   # 上限を3
 defaults write app.imichat.contextcap CaptureRoot /path/to/dir      # 保存先変更
 defaults delete app.imichat.contextcap StorageBudgetGB              # 戻す
 ```
+
+## キー記録（`keys.jsonl`）
+
+`KeyLog` が `NSEvent.addGlobalMonitorForEvents(matching: [.keyDown])` でキー押下を拾い、
+日付ごとの `<root>/<day>/keys.jsonl` に 1 行ずつ追記する。撮影・OCR とは独立に動く。
+
+1 行の形（`gaps.jsonl` / `blackouts.jsonl` と `t` を揃えてある）:
+
+```json
+{"app":"com.google.Chrome","key":"c","mods":["cmd"],"t":"162303_273"}
+```
+
+- `t` … `HHmmss_SSS`（`CaptureFile.timeStem`）。同時刻のスクショと突き合わせられる
+- `key` … 修飾を無視した基底キー（`charactersIgnoringModifiers`）か、特殊キー名（`return`/`space`/`left`/`f5` …）
+- `mods` … 押されていた修飾キー（`cmd`/`opt`/`ctrl`/`shift`/`fn`）。無ければ省く。ショートカットの識別に使う
+- `app` … 前面アプリの bundle id。**⌘W の意味はアプリで変わる**ので必ず添える
+
+決め事:
+
+- **押下（keyDown）だけ。**離す（keyUp）は取らない。行数が半分で済み、打鍵と使用ショートカットの
+  復元にはこれで足りる
+- **保持は無期限。**`Retention` は `.jpg` しか消さないので、この JSONL は削除対象に入らない
+  （テキストなので容量は画像より桁違いに小さい）
+- **要アクセシビリティ権限。**無いとモニタは 1 件も配信しない（黙って空振り）。`AXIsProcessTrusted()`
+  で確認し、無ければプロンプト＋10 秒ごとに再試行する。メニューに「キー記録: 有効／権限が必要」を出す。
+  再ビルドで ad-hoc 署名が変わると画面収録と同様この権限も剥がれる
+- **IME の変換前ローマ字しか取れない。**確定後の日本語は画面の OCR 側で補う前提
+- **パスワードは基本入らない。**セキュア入力中は OS が secure event input を有効にし、
+  グローバルモニタにキーが届かない。とはいえ通常テキストは全部残るので、`~/ContextCap` は
+  他人に渡さない前提で扱う
+
+**Android には対応物が無い。**アクセシビリティサービスの `TYPE_VIEW_TEXT_CHANGED` 等で
+似たことは可能だが、契約（保存形式）には手を入れていない。
 
 ## 技術構成
 

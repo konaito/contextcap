@@ -172,11 +172,15 @@ Android 版は `INTERNET` permission すら宣言していない。
 | `blackouts.jsonl` | 全面が黒くて捨てたフレームの区間 | ✅ | ✅ |
 | `gaps.jsonl` | **撮影が途切れた理由**（スリープ／消灯／ロック／撮影失敗／アプリ起動・終了） | ✅ | — |
 | `apps.jsonl` | 前面アプリが切り替わった時刻 | — | ✅ |
+| `keys.jsonl` | キー押下と使用ショートカット（前面アプリ付き・押下のみ・保持無期限） | ✅ | — |
 
 ```
 <root>/YYYY-MM-DD/blackouts.jsonl   {"t":"HHmmss_SSS","state":"start"|"end"}
 <root>/YYYY-MM-DD/gaps.jsonl        {"t":"HHmmss_SSS","state":"sleep","reason":"..."}
+<root>/YYYY-MM-DD/keys.jsonl        {"t":"HHmmss_SSS","key":"c","mods":["cmd"],"app":"com.google.Chrome"}
 ```
+
+`keys.jsonl` は macOS 版のみ。要アクセシビリティ権限で、詳細は `macos/README.md`。
 
 `gaps.jsonl` が無いと、スクショが無い時間について「PC の前にいなかった」のか
 「スリープしていた」のか「ロック中で撮影が失敗していた」のかを解析側で区別できない。

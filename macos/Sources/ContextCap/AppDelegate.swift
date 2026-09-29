@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var capture: CaptureManager!
     private var indexer: OCRIndexer!
     private var retention: Retention!
+    private var keyLog: KeyLog!
     private var retentionTimer: Timer?
     private var permissionRetryTimer: Timer?
     private var sweeping = false
@@ -31,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         indexer = OCRIndexer()
         capture = CaptureManager(stats: stats, indexer: indexer)
         retention = Retention(root: Self.captureRoot)
+        keyLog = KeyLog(root: Self.captureRoot)
 
         // アプリが落ちていた間の撮影や、enqueue の取りこぼしを拾い直す。
         // これは backlog キューに入るので、新規撮影の OCR を待たせない
@@ -50,6 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         LaunchAtLogin.registerOnFirstLaunch()
         capture.start()
+        keyLog.start()
         schedulePermissionRetryIfNeeded()
 
         // 保持期間・容量のチェックは 5 分ごと。撮影ごとにやる必要はない
@@ -84,6 +87,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(disabledItem("撮影画質: \(capture.profileText)"))
         menu.addItem(disabledItem("保持: \(Retention.retentionDays) 日（OCR 済みのみ削除）"))
         menu.addItem(disabledItem(indexer.statusText))
+        menu.addItem(disabledItem("キー記録: \(keyLog.isActive ? "有効" : "アクセシビリティ権限が必要")"))
         if let last = lastSweep {
             var line = "前回の削除: \(last.deleted) 枚"
             // 消せなかった分は必ず見せる。黙って溜まると容量だけ増えて原因が分からない
@@ -101,6 +105,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(actionItem("再開", #selector(togglePause)))
         case .noPermission:
             menu.addItem(actionItem("システム設定で権限を許可…", #selector(openPrivacySettings)))
+        }
+
+        if !keyLog.isActive {
+            menu.addItem(actionItem("キー記録を許可（アクセシビリティ）…", #selector(openAccessibilitySettings)))
         }
 
         menu.addItem(actionItem("保存先を Finder で開く", #selector(openFolder)))
@@ -176,6 +184,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func openPrivacySettings() {
         let url = URL(
             string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+        )!
+        NSWorkspace.shared.open(url)
+    }
+
+    @objc private func openAccessibilitySettings() {
+        let url = URL(
+            string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
         )!
         NSWorkspace.shared.open(url)
     }
