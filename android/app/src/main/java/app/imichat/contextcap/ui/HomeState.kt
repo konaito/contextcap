@@ -14,6 +14,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import app.imichat.contextcap.CaptureBrowser
 import app.imichat.contextcap.CaptureService
 import app.imichat.contextcap.AppUsage
@@ -105,40 +108,52 @@ class HomeState internal constructor() {
 }
 
 /// 状態を作って監視を開始する。監視は 4 本あり、それぞれ更新頻度が違う。
+///
+/// **周期の監視は画面が見えている間（STARTED）だけ回す。** `LaunchedEffect` の
+/// `while (true)` だけだと、ホームに戻ってもアクティビティがバックスタックに残る限り
+/// composition が生きていて回り続ける。2026-10-04 の実機（約 3.9 万枚）では、
+/// X を前面にしている間も統計の全走査と最新 1 枚の監視が CPU 1 コア分を食っていた
 @Composable
 fun rememberHomeState(): HomeState {
     val context = LocalContext.current
     val root = remember { CaptureService.captureRoot(context) }
     val state = remember { HomeState().apply { paused = isPaused(context) } }
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
 
     // 進捗インジケータを動かすための時計
-    LaunchedEffect(Unit) {
-        while (true) {
-            state.now = System.currentTimeMillis()
-            delay(100)
+    LaunchedEffect(lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                state.now = System.currentTimeMillis()
+                delay(100)
+            }
         }
     }
 
     // 統計。フルスキャンなので IO スレッドで、頻度も落とす
-    LaunchedEffect(state.paused) {
-        while (true) {
-            state.snapshot = withContext(Dispatchers.IO) { readSnapshot(context) }
-            delay(5_000)
+    LaunchedEffect(lifecycle, state.paused) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                state.snapshot = withContext(Dispatchers.IO) { readSnapshot(context) }
+                delay(5_000)
+            }
         }
     }
 
-    // 最新の 1 枚を監視する。CaptureBrowser は全件走査しないので毎秒でも軽い
-    LaunchedEffect(Unit) {
-        while (true) {
-            val found = withContext(Dispatchers.IO) { CaptureBrowser.latest(root, 1).firstOrNull() }
-            if (found?.absolutePath != state.newest?.absolutePath) {
-                state.newest = found
-                state.lastCaptureAt = System.currentTimeMillis()
-                state.heroImage = withContext(Dispatchers.IO) {
-                    found?.let { CaptureThumbnail.decode(it, HERO_MAX_PIXEL)?.asImageBitmap() }
+    // 最新の 1 枚を監視する。CaptureBrowser はファイル名だけで判断し stat しない
+    LaunchedEffect(lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                val found = withContext(Dispatchers.IO) { CaptureBrowser.latest(root, 1).firstOrNull() }
+                if (found?.absolutePath != state.newest?.absolutePath) {
+                    state.newest = found
+                    state.lastCaptureAt = System.currentTimeMillis()
+                    state.heroImage = withContext(Dispatchers.IO) {
+                        found?.let { CaptureThumbnail.decode(it, HERO_MAX_PIXEL)?.asImageBitmap() }
+                    }
                 }
+                delay(1_000)
             }
-            delay(1_000)
         }
     }
 

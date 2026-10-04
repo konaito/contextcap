@@ -110,6 +110,37 @@ class RetentionTest {
     }
 
     @Test
+    fun `上限を超えたら上限ちょうどではなく 90% まで消す`() {
+        // 100 バイト × 11 枚 = 1,100 バイト。上限 1,000 なら 900 まで下げるので 2 枚消える。
+        // 上限ちょうどで止めると 1 枚しか消えず、次の撮影でまた全走査が走る
+        val files = (1..11).map { i ->
+            val stem = "12%02d00_000".format(i)
+            jpg(day(1), stem, size = 100).also { markIndexed(day(1), stem) }
+        }
+
+        val result = Retention(root, budgetBytes = 1_000, retentionDays = 14, now = { now }).sweep()!!
+        assertEquals(2, result.deleted)
+        assertEquals(200, result.freedBytes)
+        assertFalse(files[0].exists())
+        assertFalse(files[1].exists())
+        assertTrue(files[2].exists())
+    }
+
+    @Test
+    fun `上限以下なら 90% を超えていても容量では消さない`() {
+        // 950 バイト。上限 1,000 以下なので、下げる先の 900 を超えていても触らない
+        (1..9).forEach { i ->
+            val stem = "12%02d00_000".format(i)
+            jpg(day(1), stem, size = 100)
+            markIndexed(day(1), stem)
+        }
+        jpg(day(1), "121000_000", size = 50)
+        markIndexed(day(1), "121000_000")
+
+        assertNull(Retention(root, budgetBytes = 1_000, retentionDays = 14, now = { now }).sweep())
+    }
+
+    @Test
     fun `旧世代の gN 接尾辞が付いていても同一性を保って消せる`() {
         // 段階圧縮を廃止する前に作られたファイル。ocr.jsonl 側は接尾辞なしの基底名で持つ
         val old = jpg(day(20), "120000_000.g1")
