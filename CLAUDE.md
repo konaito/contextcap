@@ -66,7 +66,8 @@ cd android
 - **撮影時刻はファイル属性ではなくパスから解釈する**（`CaptureFile.captureDate` / `captureDateOf`）。
   再圧縮でファイルが作り直されても期間集計・古い順判定が壊れないための設計。ここを属性ベースに戻さない
 - **段階再圧縮は 2026-08-18 に両プラットフォームで廃止した**（`Compactor.swift` /
-  `Compactor.kt` / `CompressionRung.kt` は削除済み）。常に gen0 で撮り、撮影直後に OCR し、
+  `Compactor.kt` / `CompressionRung.kt` は削除済み）。常に gen0 で撮って OCR し
+  （macOS は撮影直後、Android は 2026-10-04 から充電中だけ。`OcrIndexer` 冒頭に理由）、
   `Retention` が保持期間超と容量超過分を古い順に削除する。**OCR 済みでない画像は消さない。**
   適応撮影プロファイル（`CaptureGeneration`）も廃止した — 一度深い段が採用されると
   新規撮影まで劣化し、実際 macOS では gen0 が 1 枚も撮られない状態が続いていた

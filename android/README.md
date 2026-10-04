@@ -19,7 +19,7 @@ macOS 版（`../macos/`）と同じ思想で、スマホ利用文脈のデータ
 | 保存形式 | JPEG **常に等倍 quality 75**（適応圧縮は 2026-08-18 に廃止） |
 | 保存先 | `<外部ストレージのアプリ領域>/ContextCap/YYYY-MM-DD/HHmmss_SSS[.gN].jpg` |
 | 容量上限 | **10GB**。再圧縮せず、14 日超と超過分を古い順に削除 |
-| OCR | 撮影直後に ML Kit（日本語）。テキストは `<day>/ocr.jsonl` |
+| OCR | 充電中に ML Kit（日本語）。テキストは `<day>/ocr.jsonl` |
 | 重複スキップ | なし（解析用途なので間引かず全部残す） |
 | 画面 OFF 中 | 撮影停止（スマホは 1 日の大半が画面 OFF のため） |
 | UI | Jetpack Compose + Material 3 Expressive。ホームと全画面ビューアの 2 画面。**常駐通知なし** |
@@ -147,7 +147,7 @@ adb pull /storage/emulated/0/Android/data/app.imichat.contextcap/files/ContextCa
 
 ## 容量管理（14 日保持・再圧縮なし）
 
-**再圧縮はしない。** 常に等倍で撮り、撮った瞬間に OCR し、テキストを確定させてから画像を捨てる。
+**再圧縮はしない。** 常に等倍で撮り、充電中に OCR し、テキストを確定させてから画像を捨てる。
 テキストが本体で、画像は一時キャッシュという位置づけ。
 
 - 14 日を過ぎた画像を削除する（`Retention.DEFAULT_RETENTION_DAYS`）
@@ -189,7 +189,7 @@ macOS 版では順序を間違えた結果、corpus の 39%（20,007 枚）が�
 `.gN` 接尾辞の**パースは残す**（`CaptureFile.LEGACY_GENERATION_SUFFIXES`）。
 既に付いたファイルが残っている環境で、読めないと撮影時刻の解釈と OCR の同一性判定が壊れる。
 
-## OCR（撮影直後）
+## OCR（充電中だけ）
 
 `OcrIndexer` が ML Kit Text Recognition v2（日本語・bundled）で OCR し、
 日付ディレクトリの `ocr.jsonl` に 1 行ずつ追記する（`apps.jsonl` / `blackouts.jsonl` と同じ規約）。
@@ -198,14 +198,25 @@ macOS 版では順序を間違えた結果、corpus の 39%（20,007 枚）が�
 {"t":"HHmmss_SSS","gen":0,"w":1080,"h":2400,"bytes":95000,"lines":25,"ms":154,"status":"ok","text":"..."}
 ```
 
-- **撮影 tick を待たせない。** 撮影は「保存して enqueue」で終わり
+- **OCR は電源につながっている間だけ回す（2026-10-04 から）。** 撮影は「保存して enqueue」で
+  終わり、電源がなければ積むだけ。挿した瞬間に溜まった分から消化する
+  - 判定は `BATTERY_CHANGED` の `EXTRA_PLUGGED`。`BatteryManager.isCharging` は満充電で
+    false になり、一晩挿したままだと 100% で止まるので使わない
+  - 消化中は 1 枚ごとに `PARTIAL_WAKE_LOCK`（timeout 60 秒）を取る。画面オフだと
+    充電中でも CPU が寝るため
+  - 以前の「撮影直後に OCR」は、Compactor に追い越されないためだった。Compactor は廃止済みで、
+    OCR 結果を即時に読む画面も無い。`Retention` は未 OCR を消さないので、待っても失わない
+  - 1 日約 3,600 枚 × 約 1.4 秒で、充電中に約 1.4 時間の OCR が要る（画面オン時の値。
+    画面オフ時の速度は未計測）。充電が足りない日が続くと未 OCR が溜まり、容量を超えたら
+    `blockedByOcr` に出る
 - **キューは 2 段。** 撮影直後の分（fresh）を必ず先に処理し、サービス接続時に拾った未 OCR
-  （backlog）は fresh が空の時だけ 1 枚ずつ進める。1 本にすると追いつき処理が終わるまで
-  新規撮影が待たされ、「撮った瞬間に OCR」が成立しない
+  （backlog）は fresh が空の時だけ 1 枚ずつ進める。同じファイルは二重に積まない
 - **並列にしない。** 単一スレッドなので同時に持つ Bitmap は常に 1 枚。1080x2400 の
   ARGB_8888 は約 10MB あり、並列化するとそのまま倍々でメモリを食う
 - **Bitmap は必ず `recycle()`。** `hardwareBuffer.close()` を怠って撮影が全部落ちたのと同型の罠
-- **縮小しない。** 上記のとおり縮小しても速くならず、テキストだけが壊れる
+- **縮小しない。** 根拠は macOS（Apple Vision）の統制実験。ただし実機 ML Kit の OCR 時間は
+  `ms ≒ 1016 + 22.8 × 行数`（8/14〜20 の 25,400 枚）で、行数によらない固定費が約 1 秒ある。
+  Vision の「行数に比例」とは形が違うので、ML Kit で縮小が速くならないかは**未検証**
 - `conf` は持たない。macOS 側の実測で「読んだ行の平均確信度」は行数が増えるほど下がる
   非単調な値で、取りこぼし率の代理変数にならないと分かっている
 - **`org.json` と `android.util.Log` を `OcrLog` で使わない。** 使うと JVM unit test から
@@ -223,8 +234,17 @@ macOS 版では順序を間違えた結果、corpus の 39%（20,007 枚）が�
 | メモリ | PSS 165MB → 156MB（サステインで減少。リークなし） |
 | 撮影 → OCR の遅延 | 最新 jpg と最新 OCR 行が常に一致 |
 
-**実機ではない。** ML Kit の速度・電池は実機で測り直すこと。ただし 77 倍の余裕があるので、
-実機が 10 倍遅くても追いつく計算になる。
+**実機ではない。** 実機（Pixel 10 Pro Fold）では約 9 倍遅かった。
+
+### 実測（実機 Pixel 10 Pro Fold）
+
+| | 実測値 |
+|---|---|
+| 1 枚あたり（8/14〜20・25,400 枚） | 中央値 1,163ms / p90 1,676ms（wall） |
+| 行数との関係 | `ms ≒ 1016 + 22.8 × 行数`。行数 0〜9 でも中央値 895ms |
+| 撮影に追従して OCR した時の CPU（2026-10-04・60 秒） | アプリ全体で 1 コアの約 45%。大半が `libmlkit_google_ocr_pipeline.so` |
+| 充電中だけにした後・電源なし画面オン（同日・120 秒） | 1 コアの 1.6%。14 枚撮影・OCR 0 件 |
+| 電源を戻した時 | 溜まった 14 枚を約 20 秒で消化。`ContextCap:ocr` の wakelock を確認 |
 
 APK サイズは bundled モデルの分だけ増える。`abiFilters` を `arm64-v8a` に絞って
 **release 15.7MB**（絞らないと 44.4MB。うち 39MB が 4 ABI 分の `lib/`）。
@@ -505,7 +525,7 @@ Android 17 の実機では、有効になっていても自分自身が返って
 |------|---------|-----------|------|
 | 撮影間隔 | 5 秒 | 10 秒 | 端末の容量制約 |
 | 容量上限 | 40GB / 3 日保持 | 10GB / 14 日保持 | 1 枚が 813KB vs 95.3KB で桁が違う |
-| OCR | Apple Vision | ML Kit（日本語・bundled） | どちらも撮影直後・並列なし |
+| OCR | Apple Vision | ML Kit（日本語・bundled） | macOS は撮影直後、Android は充電中。どちらも並列なし |
 | 段階再圧縮 | 廃止 | 廃止 | 縮小しても OCR は速くならず、テキストだけが壊れる |
 | 撮影手段 | ScreenCaptureKit | AccessibilityService | Android に相当 API がない |
 | 常駐 | メニューバー | AccessibilityService | 通知を持たない分こちらの方が軽い |
