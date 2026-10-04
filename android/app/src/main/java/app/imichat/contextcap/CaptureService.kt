@@ -6,6 +6,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Bitmap
+import android.os.BatteryManager
+import android.os.PowerManager
 import androidx.core.content.edit
 import androidx.core.graphics.scale
 import android.os.Handler
@@ -86,6 +88,8 @@ class CaptureService : AccessibilityService() {
                 ACTION_SETTINGS_CHANGED -> {
                     if (isPaused()) stop() else start()
                 }
+                // 残量が変わるたびに飛ぶが、OcrIndexer 側で状態が変わった時だけ動く
+                Intent.ACTION_BATTERY_CHANGED -> ocr.setCharging(isPluggedIn(intent))
             }
         }
     }
@@ -97,14 +101,23 @@ class CaptureService : AccessibilityService() {
         getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit { remove(KEY_CAPTURE_GEN) }
 
+        // receiver が ocr を触るので、登録より先に作る
+        val wakeLock = getSystemService(PowerManager::class.java)
+            ?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "ContextCap:ocr")
+            ?.apply { setReferenceCounted(false) }
+        ocr = OcrIndexer(root, wakeLock)
+
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_SCREEN_OFF)
             addAction(ACTION_SETTINGS_CHANGED)
+            addAction(Intent.ACTION_BATTERY_CHANGED)
         }
         // ACTION_SETTINGS_CHANGED は自アプリ内の broadcast なので、
-        // 他アプリから送られないよう NOT_EXPORTED を明示する
-        registerReceiver(systemReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        // 他アプリから送られないよう NOT_EXPORTED を明示する（システムの broadcast は届く）。
+        // BATTERY_CHANGED は sticky なので、戻り値が今の電源状態になる
+        val battery = registerReceiver(systemReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        ocr.setCharging(isPluggedIn(battery))
 
         // 有効な IME の一覧。前面アプリの判定から除くために使う。
         // 決め打ちのパッケージ名リストにしないのは、機種と設定で変わるため。
@@ -118,7 +131,6 @@ class CaptureService : AccessibilityService() {
         }.getOrNull() ?: emptySet()
 
         appLog = ForegroundAppLog(this)
-        ocr = OcrIndexer(root)
         // サービスが止まっていた間の撮影を拾い直す。backlog キューに入るので新規撮影を待たせない
         ocr.reconcile()
         worker.execute {
@@ -158,6 +170,11 @@ class CaptureService : AccessibilityService() {
     override fun onInterrupt() = Unit
 
     // MARK: - 制御
+
+    /// 電源につながっているか。`BatteryManager.isCharging` は満充電で false になるので使わない
+    /// （一晩挿したままだと 100% に達した時点で OCR が止まる）
+    private fun isPluggedIn(intent: Intent?): Boolean =
+        (intent?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0
 
     private fun isPaused(): Boolean =
         getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).getBoolean(KEY_PAUSED, false)

@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- 充電中だけ OCR を回す。画面オフだと充電中でも CPU が寝るので、消化中だけ持つ -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <application
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
