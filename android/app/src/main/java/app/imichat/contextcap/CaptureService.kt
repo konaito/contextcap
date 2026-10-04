@@ -18,6 +18,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.Date
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 /// 画面を一定間隔で撮影して端末内に保存する常駐サービス。
 /// AccessibilityService 自体が OS 管理の常駐プロセスなので、ForegroundService は持たない。
@@ -52,12 +53,22 @@ class CaptureService : AccessibilityService() {
     private var running = false
     /// 最後に撮影サイクルが完了した時刻。watchdog が tick の停止を検出するのに使う
     private var lastCycleAt = 0L
+    /// sweep が retentionWorker に積まれているか実行中か。**多重に積まない。**
+    /// 1 回の走査が撮影間隔より長いと、撮影ごとの投入が積み上がって走査が途切れなくなる
+    private val sweeping = AtomicBoolean(false)
+    /// 最後に sweep を終えた時刻（メインスレッドだけが読み書きする）
+    private var lastSweepAt = 0L
 
     private val tickRunnable = Runnable { captureOnce() }
 
-    private val retentionRunnable = Runnable {
-        restartIfStalled()
-        sweepNow()
+    /// 5 分ごとの見回り。watchdog は毎回、保持期間の sweep は `SWEEP_INTERVAL_MS` ごと。
+    /// 容量超過の sweep はここを待たず撮影直後に起動する
+    private val retentionRunnable = object : Runnable {
+        override fun run() {
+            restartIfStalled()
+            if (System.currentTimeMillis() - lastSweepAt >= SWEEP_INTERVAL_MS) sweepNow()
+            handler.postDelayed(this, RETENTION_INTERVAL_MS)
+        }
     }
 
     /// 画面 ON/OFF と設定変更を受ける。ACTION_SCREEN_* は manifest 静的登録できないので動的登録する
@@ -219,7 +230,11 @@ class CaptureService : AccessibilityService() {
                             // 撮った瞬間に OCR へ。完了は待たない（待つと撮影が詰まる）
                             ocr.enqueue(saved)
                             if (stats.totalBytes > budgetBytes()) {
-                                handler.post { sweepNow() }
+                                handler.post {
+                                    // OCR 待ちで消せない間に毎枚 sweep し直さないよう間隔を空ける
+                                    val sinceLast = System.currentTimeMillis() - lastSweepAt
+                                    if (sinceLast >= CAPACITY_SWEEP_MIN_GAP_MS) sweepNow()
+                                }
                             }
                         }
                     } catch (e: Exception) {
@@ -323,26 +338,44 @@ class CaptureService : AccessibilityService() {
         getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getLong(KEY_BUDGET_BYTES, DEFAULT_BUDGET_BYTES)
 
-    /// 5 分ごとの定期チェック。保持期間を過ぎた「OCR 済み」画像を消す。再圧縮はしない
+    /// 保持期間を過ぎた・容量を超えた「OCR 済み」画像を消す。再圧縮はしない。
+    /// 実行中か積まれている間は何もしない（呼び出し元は撮影直後と見回りの 2 か所）
     private fun sweepNow() {
-        handler.removeCallbacks(retentionRunnable)
+        if (!sweeping.compareAndSet(false, true)) return
         retentionWorker.execute {
-            val result = Retention(
-                root = captureRoot(this),
-                budgetBytes = budgetBytes(),
-            ).sweep()
+            try {
+                val result = Retention(
+                    root = captureRoot(this),
+                    budgetBytes = budgetBytes(),
+                ).sweep()
 
-            if (result != null) {
-                Log.i(
-                    TAG,
-                    "retention: deleted=${result.deleted} " +
-                        "freed=${result.freedBytes} blockedByOcr=${result.blockedByOcr}",
-                )
-                // stats への書き込みは撮影スレッドに寄せて競合を避ける
-                worker.execute { stats.rescan() }
+                if (result != null) {
+                    Log.i(
+                        TAG,
+                        "retention: deleted=${result.deleted} " +
+                            "freed=${result.freedBytes} blockedByOcr=${result.blockedByOcr}",
+                    )
+                    // stats への書き込みは撮影スレッドに寄せて競合を避ける。
+                    // フルスキャンし直さず、消した分だけ差し引く。
+                    // 差し引く前に sweeping を下ろすと、古い totalBytes を見た撮影が
+                    // もう 1 回 sweep を起こすので、差し引いてから下ろす
+                    worker.execute {
+                        stats.recordDeletion(result.deleted, result.freedBytes)
+                        handler.post(::finishSweep)
+                    }
+                } else {
+                    handler.post(::finishSweep)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "retention failed", e)
+                handler.post(::finishSweep)
             }
-            handler.post { handler.postDelayed(retentionRunnable, RETENTION_INTERVAL_MS) }
         }
+    }
+
+    private fun finishSweep() {
+        lastSweepAt = System.currentTimeMillis()
+        sweeping.set(false)
     }
 
     companion object {
@@ -368,8 +401,16 @@ class CaptureService : AccessibilityService() {
         /// これだけサイクルが完了していなければ tick が死んだとみなして叩き直す
         const val STALL_THRESHOLD_MS = 60_000L
 
-        /// 保持期間・容量チェックの間隔。削除は日単位の判断なので撮影ごとにやる必要はない
+        /// 見回り（watchdog）の間隔
         const val RETENTION_INTERVAL_MS = 5 * 60 * 1000L
+
+        /// 保持期間による sweep の間隔。削除は日単位の判断なので 1 時間ごとで足りる。
+        /// 1 回の sweep は全ファイルを stat するので、5 分ごとに回すと 4 万枚超で常時重い
+        const val SWEEP_INTERVAL_MS = 60 * 60 * 1000L
+
+        /// 容量超過で起こす sweep の最短間隔。通常は上限の 90% まで下がるので
+        /// 次に超えるのは約 1 日後だが、OCR 待ちで消せない間はこの間隔でだけ試す
+        const val CAPACITY_SWEEP_MIN_GAP_MS = 10 * 60 * 1000L
 
         /// 保存する JPEG の品質。常に等倍で撮るので段による分岐は無い
         const val FULL_RES_QUALITY = 75

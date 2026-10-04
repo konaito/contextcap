@@ -41,6 +41,21 @@ class StatsStoreTest {
     }
 
     @Test
+    fun `削除分を差し引くとフルスキャンし直した値と一致する`() {
+        write("2026-08-13", "100000_000", 100)
+        write("2026-08-13", "100010_000", 200)
+        write("2026-08-14", "100020_000", 300)
+        val stats = StatsStore(root)
+
+        File(root, "2026-08-13/100000_000.jpg").delete()
+        stats.recordDeletion(count = 1, bytes = 100)
+
+        val rescanned = StatsStore(root)
+        assertEquals(rescanned.count, stats.count)
+        assertEquals(rescanned.totalBytes, stats.totalBytes)
+    }
+
+    @Test
     fun `jpg 以外は数えない`() {
         write("2026-08-13", "100000_000", 100)
         File(root, "2026-08-13/notes.txt").writeBytes(ByteArray(999))

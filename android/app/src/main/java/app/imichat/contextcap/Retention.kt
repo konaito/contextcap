@@ -32,12 +32,18 @@ data class RetentionResult(
 /// **削除は不可逆なので、OCR が済んでいないファイルは絶対に消さない。**
 /// 消せずに容量が上限を超え続ける場合は `blockedByOcr` で表に出す。黙って消さない。
 ///
+/// **上限を超えたら、上限ちょうどではなく `targetBytes`（既定は上限の 90%）まで消す。**
+/// 上限ちょうどで止めると次の 1 枚でまた超え、撮影のたびに全走査が走る。
+/// 実機（2026-10-04・43,519 枚）では 1 回の走査に約 33 秒かかり、撮影 10 秒ごとに
+/// 積まれた sweep が詰まり続けて、CPU 1 コアの 8 割を常時使っていた。
+///
 /// 走査・判断を Android 依存なしで単体テストできるよう、`now` と `budgetBytes` を注入する。
 class Retention(
     private val root: File,
     private val budgetBytes: Long,
     private val retentionDays: Int = DEFAULT_RETENTION_DAYS,
     private val now: () -> Long = { System.currentTimeMillis() },
+    private val targetBytes: Long = budgetBytes / 10 * LOW_WATERMARK_TENTHS,
 ) {
     private data class Entry(
         val file: File,
@@ -55,6 +61,8 @@ class Retention(
         val result = RetentionResult()
         var total = entries.sumOf { it.size }
         val cutoff = now() - retentionDays * DAY_MS
+        // 一度上限を超えたら targetBytes まで下げる。超えていなければ容量では消さない
+        val sizeLimit = if (total > budgetBytes) targetBytes else budgetBytes
 
         // OCR 済みの集合は日付ディレクトリごとに 1 回だけ読む（1 枚ずつ読むと jsonl を
         // 何千回もパースすることになる）
@@ -63,7 +71,7 @@ class Retention(
         // 古い順に見る。消す条件は「OCR 済み」かつ「保持期間外 または 容量超過」
         for (entry in entries.sortedBy { it.time }) {
             val tooOld = entry.time < cutoff
-            val overBudget = total > budgetBytes
+            val overBudget = total > sizeLimit
             if (!tooOld && !overBudget) break
 
             val indexed = indexedByDay.getOrPut(entry.dayDir.name) {
@@ -119,6 +127,11 @@ class Retention(
         /// 1 枚 95.3KB・理論最大 8,640 枚/日 = 823MB/日。14 日で 11.5GB になるので
         /// 上限（既定 10GB）側でも削られる。観測レートなら十分収まる
         const val DEFAULT_RETENTION_DAYS = 14
+
+        /// 上限超過時に下げる先（上限の 10 分の N）。10GB なら 1GB 分の余裕ができる。
+        /// 実機の 1 枚は平均約 240KB（2026-10-04・10GB / 43,519 枚）なので約 4,200 枚、
+        /// 1 日 3,600 枚前後の撮影でおよそ 1 日に 1 回だけ容量で消すことになる
+        const val LOW_WATERMARK_TENTHS = 9
         private const val DAY_MS = 24L * 60 * 60 * 1000
     }
 }

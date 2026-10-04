@@ -55,6 +55,15 @@ class StatsStore(val root: File) {
         lastDate = date
     }
 
+    /// Retention が消した分の差し引き。フルスキャンし直さないためにある。
+    /// 43,519 枚で 1 回十数秒かかる走査を、削除のたびに撮影 worker で回していた。
+    /// firstDate は更新しない（ここでは最古の残りが分からない）。常駐側が使うのは
+    /// 容量判定の totalBytes だけで、画面の表示は `CaptureSnapshot` が別にスキャンする
+    fun recordDeletion(count: Int, bytes: Long) {
+        this.count = (this.count - count).coerceAtLeast(0)
+        totalBytes = (totalBytes - bytes).coerceAtLeast(0)
+    }
+
     // MARK: - 表示用フォーマット
 
     val countText: String
