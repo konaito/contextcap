@@ -22,29 +22,54 @@ class StatsStore(val root: File) {
         rescan()
     }
 
-    /// ディレクトリをフルスキャンして実測値に合わせる
+    /// ディレクトリをフルスキャンして実測値に合わせる。
+    ///
+    /// 日付のパースは最古と最新の 2 回だけにする。`<YYYY-MM-DD>/<HHmmss_SSS>` は文字列順が
+    /// そのまま時刻順なので、1 枚ずつ SimpleDateFormat に通す必要がない（通すと走査時間の
+    /// 4 割がパースになっていた）。形式に合わない名前だけ従来どおり個別に解釈する
     fun rescan() {
         var newCount = 0
         var newBytes = 0L
-        var newFirst: Date? = null
-        var newLast: Date? = null
+        var minKey: String? = null
+        var maxKey: String? = null
+        var minFile: File? = null
+        var maxFile: File? = null
+        var oddFirst: Date? = null
+        var oddLast: Date? = null
 
         root.walkTopDown()
             .filter { it.isFile && it.extension.lowercase() == "jpg" }
             .forEach { file ->
                 newCount += 1
                 newBytes += file.length()
-                val captured = CaptureFile.captureDateOf(file) ?: Date(file.lastModified())
-                val currentFirst = newFirst
-                val currentLast = newLast
-                if (currentFirst == null || captured.before(currentFirst)) newFirst = captured
-                if (currentLast == null || captured.after(currentLast)) newLast = captured
+                val day = file.parentFile?.name.orEmpty()
+                val stem = CaptureFile.baseNameOf(file)
+                if (DAY_PATTERN.matches(day) && STEM_PATTERN.matches(stem)) {
+                    val key = "$day $stem"
+                    if (minKey.let { it == null || key < it }) {
+                        minKey = key
+                        minFile = file
+                    }
+                    if (maxKey.let { it == null || key > it }) {
+                        maxKey = key
+                        maxFile = file
+                    }
+                } else {
+                    val captured = CaptureFile.captureDateOf(file) ?: Date(file.lastModified())
+                    val first = oddFirst
+                    val last = oddLast
+                    if (first == null || captured.before(first)) oddFirst = captured
+                    if (last == null || captured.after(last)) oddLast = captured
+                }
             }
+
+        val parsedFirst = minFile?.let { CaptureFile.captureDateOf(it) }
+        val parsedLast = maxFile?.let { CaptureFile.captureDateOf(it) }
 
         count = newCount
         totalBytes = newBytes
-        firstDate = newFirst
-        lastDate = newLast
+        firstDate = listOfNotNull(parsedFirst, oddFirst).minOrNull()
+        lastDate = listOfNotNull(parsedLast, oddLast).maxOrNull()
     }
 
     /// 撮影 1 枚分の増分更新
@@ -89,6 +114,10 @@ class StatsStore(val root: File) {
         }
 
     companion object {
+        /// 文字列順が時刻順になる名前の形（`CaptureFile.DAY_FORMAT` / `TIME_FORMAT`）
+        private val DAY_PATTERN = Regex("""\d{4}-\d{2}-\d{2}""")
+        private val STEM_PATTERN = Regex("""\d{6}_\d{3}""")
+
         /// macOS 版の ByteCountFormatter(.file) に合わせて 1000 進で表示する
         fun formatBytes(bytes: Long): String {
             if (bytes < 1000) return "$bytes bytes"
