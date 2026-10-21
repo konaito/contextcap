@@ -20,7 +20,7 @@ macOS 版と Android 版があり、**保存ファイルの命名規約が同一
 | 容量上限 | 40GB（超過分と 3 日超を削除。再圧縮しない） | 10GB（超過分と 14 日超を削除。再圧縮しない） |
 | OCR | 撮影直後に Apple Vision | 充電中に ML Kit（日本語・bundled） |
 | 常駐 | メニューバー（`LSUIElement`） | AccessibilityService（常駐通知なし） |
-| 画面 | メニューバーのポップアップのみ | ホーム + 全画面ビューアの 2 画面 |
+| 画面 | メニューバーのポップアップ + 文字の窓（日付・検索） | ホーム + 全画面ビューア + 文字の画面（日付ごと） |
 | 画面 OFF 中 | 失敗を無視して次の tick へ | 能動的に停止 |
 | 回収 | `~/ContextCap/` を直接 | `adb pull` |
 | 技術 | Swift / AppKit / SwiftPM | Kotlin / AGP / Jetpack Compose + Material 3 |

@@ -8,6 +8,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var indexer: OCRIndexer!
     private var retention: Retention!
     private var keyLog: KeyLog!
+    private var textArchive: TextArchive!
+    private var textBrowser: TextBrowserWindowController?
     private var retentionTimer: Timer?
     private var permissionRetryTimer: Timer?
     private var sweeping = false
@@ -33,6 +35,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         capture = CaptureManager(stats: stats, indexer: indexer)
         retention = Retention(root: Self.captureRoot)
         keyLog = KeyLog(root: Self.captureRoot)
+        textArchive = TextArchive()
+        // 日の一覧は DB が冷えていると十数秒かかる。メニューを開く前に集計しておく
+        textArchive.refreshSpan()
 
         // アプリが落ちていた間の撮影や、enqueue の取りこぼしを拾い直す。
         // これは backlog キューに入るので、新規撮影の OCR を待たせない
@@ -82,7 +87,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         menu.addItem(.separator())
         menu.addItem(disabledItem("累計: \(stats.countText)"))
-        menu.addItem(disabledItem("期間: \(stats.durationText)"))
+        menu.addItem(disabledItem("画像の期間: \(stats.durationText)"))
+        // 画像は保持期間で消えるが、読み取った文字は消さない。別に数える
+        menu.addItem(disabledItem(textArchive.spanText))
+        textArchive.refreshSpan()
         menu.addItem(disabledItem("容量: \(stats.sizeText) / \(StorageBudget.displayText)"))
         menu.addItem(disabledItem("撮影画質: \(capture.profileText)"))
         menu.addItem(disabledItem("保持: \(Retention.retentionDays) 日（OCR 済みのみ削除）"))
@@ -111,6 +119,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(actionItem("キー記録を許可（アクセシビリティ）…", #selector(openAccessibilitySettings)))
         }
 
+        menu.addItem(actionItem("読み取った文字を開く…", #selector(openTextBrowser)))
         menu.addItem(actionItem("保存先を Finder で開く", #selector(openFolder)))
 
         let loginItem = actionItem("ログイン時に起動", #selector(toggleLaunchAtLogin))
@@ -167,6 +176,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else {
             capture.start()
         }
+    }
+
+    @objc private func openTextBrowser() {
+        if textBrowser == nil {
+            textBrowser = TextBrowserWindowController(archive: textArchive, captureRoot: Self.captureRoot)
+        }
+        textBrowser?.present()
     }
 
     @objc private func openFolder() {
