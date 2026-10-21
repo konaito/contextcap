@@ -117,7 +117,7 @@ MediaProjection に置き換えようとしないこと（Android 15 QPR1 以降
 
 - 撮影パス: `CaptureService`（tick・受信・除外判定）、`CaptureFile`、`OcrIndexer`、`OcrLog`、`Retention`、
   `StatsStore`、`CaptureBrowser`、`CaptureThumbnail`、`ForegroundAppLog`、`AppUsageIndex`、`AppUsageStats`、
-  `FrameBlackness`、`BlackoutLog`
+  `FrameBlackness`、`BlackoutLog`、`RemoteServer`、`TailnetAddress`
 - UI: `SetupActivity` / `ViewerActivity` + `ui/`（Compose + Material 3 Expressive）
 
 `CaptureService` の定数（`INTERVAL_MS` / `DEFAULT_BUDGET_BYTES` / `COMPACT_INTERVAL_MS` / `captureRoot()`）は
@@ -150,6 +150,28 @@ companion object に集約。**テスト時はここを書き換えて再ビル�
 - `StatsStore` / `AppUsageStats` のフルスキャンは 1 件約 0.05ms。**10 万件で 5 秒 = ANR。UI スレッドで呼ばない**
 - 一覧表示は `CaptureBrowser`（日付ディレクトリ降順・必要件数で打ち切り）を使い、全件走査に落とさない
 - Bitmap は `CaptureThumbnail` 経由で `inSampleSize` を決めてデコードし、差し替えのたびに前を `recycle()` する
+
+### スマホのデータを Mac から読む（Tailscale）
+
+スマホのアプリ自身が読み取り専用の HTTP サーバー（`RemoteServer`、ポート 8642）を持つ。
+adb もワイヤレスデバッグも要らない。Mac とスマホの両方で Tailscale が繋がっていれば読める。
+
+```bash
+curl http://100.103.43.26:8642/                         # 日付ディレクトリ一覧
+curl http://100.103.43.26:8642/2026-10-21/              # ファイル名<TAB>バイト数
+curl -s http://100.103.43.26:8642/2026-10-21/ocr.jsonl | grep 検索語
+curl -o /tmp/x.jpg http://100.103.43.26:8642/2026-10-21/120000_000.jpg
+```
+
+`100.103.43.26` はこの端末の Tailscale アドレス。tailnet から端末を外さない限り変わらない。
+ホスト名（`pixel-10-pro-fold.tail6e54b5.ts.net`）は、この Mac では引けなかった（2026-10-21）。
+`dig @100.100.100.100` には答えが返るので、macOS 側の DNS 設定の問題と見ている（原因は未確認）。
+
+- 繋がらないときは、まず `tailscale status | grep pixel` で端末が online か見る
+- 待ち受けは Tailscale のアドレスだけ（`TailnetAddress` が `fd7a:115c:a1e0::/48` を持つ
+  インターフェースで判定する）。**0.0.0.0 で待ち受ける形に変えない。** Wi-Fi・モバイル回線側に口が開く
+- 書き込み・削除の口を足さない。読み取り専用であることが `INTERNET` を足した前提
+- 取ってきたデータは PII を含む。リポジトリに入れない
 
 ### ツールチェーンの制約（Android）
 

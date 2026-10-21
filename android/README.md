@@ -6,8 +6,8 @@
 macOS 版（`../macos/`）と同じ思想で、スマホ利用文脈のデータを取ることが目的。
 
 - クリック・入力・送信などの操作は一切しない。撮って保存するだけ
-- ネットワーク送信なし。**すべてローカル保存**（`INTERNET` permission すら宣言していない）
-- 回収は `adb pull`
+- 外部への送信なし。**すべてローカル保存**
+- 回収は Tailscale 経由の `curl`（読み取り専用の HTTP サーバーを持つ）か `adb pull`
 
 ## 何をするか
 
@@ -144,6 +144,32 @@ adb pull /storage/emulated/0/Android/data/app.imichat.contextcap/files/ContextCa
 なお `adb shell run-as` からこのディレクトリには**書き込めない**（`Permission denied`）。
 これは run-as シェル側の制約で、アプリ自身の書き込みとは別。
 動作確認は run-as ではなくアプリに書かせて行う。
+
+### Tailscale 経由で読む（`RemoteServer`）
+
+ワイヤレスデバッグ無しで、tailnet 上の PC から `curl` で読める。
+Claude Code から端末のデータを直接見るための口。
+
+```bash
+curl http://100.103.43.26:8642/                          # 日付ディレクトリの一覧
+curl http://100.103.43.26:8642/2026-10-21/               # ファイル名<TAB>バイト数
+curl http://100.103.43.26:8642/2026-10-21/ocr.jsonl      # 中身そのまま
+curl -o a.jpg http://100.103.43.26:8642/2026-10-21/120000_000.jpg
+```
+
+`100.103.43.26` はこの端末の Tailscale アドレス。tailnet から端末を外さない限り変わらない。
+ホスト名（`pixel-10-pro-fold.tail6e54b5.ts.net`）は、この Mac では引けなかった（2026-10-21）。
+`dig @100.100.100.100` には答えが返るので、macOS 側の DNS 設定の問題と見ている（原因は未確認）。
+
+- **読み取り専用。** GET（と HEAD）だけ受ける。書き込み・削除の口は無い
+- **Tailscale のアドレスでだけ待ち受ける。** 0.0.0.0 では受けないので、Wi-Fi・モバイル回線側に
+  ポートは開かない。Tailscale のインターフェースは `fd7a:115c:a1e0::/48`（Tailscale 固有の IPv6）を
+  持つものとして探す（`TailnetAddress`）。100.64.0.0/10 だけで判定すると、
+  キャリアの CGNAT アドレスを掴んでしまう
+- 認証は Tailscale 側に任せていて、アプリ側には無い。tailnet の端末からは誰でも読める
+- Tailscale が後から繋がった・アドレスが変わった場合は 30 秒以内に張り直す
+- 撮影の一時停止中も動く（サービスが生きている間は常時）。コード上の挙動で、実機では未確認
+- 撮影・OCR・削除とはスレッドを共有しない
 
 ## 容量管理（14 日保持・再圧縮なし）
 
@@ -465,6 +491,9 @@ tick が死んだまま放置されないことの実証になる。
 | standby bucket | **5 = EXEMPTED**。アクセシビリティサービスなので OS がバッテリー制限から除外している |
 | 折りたたみ | 開いた状態では `displayId 0` に **Inner Display が割り当たる**（2076×2152）。実際に撮れた画像も同じ解像度で、`Display.DEFAULT_DISPLAY` のままで内側が撮れる |
 | `adb pull` | 通る（`MANAGE_EXTERNAL_STORAGE` 不要） |
+| `RemoteServer`（2026-10-21） | Mac から Tailscale 経由で一覧・`ocr.jsonl`（4.4MB を 5.5 秒）・JPEG（117KB を 0.28 秒）が取れる。Wi-Fi 側のアドレスの 8642 番は接続拒否。`..` は 404、`DELETE` は 405 |
+| `RemoteServer` と Doze | 画面オフ・電池駆動で `dumpsys deviceidle force-idle`（deep `IDLE`）にしても 3 回とも 200（0.25〜0.32 秒）。自然に Doze に入って何時間も経った後は未検証 |
+| `RemoteServer` の張り直し | Tailscale を `am force-stop` すると接続できなくなり（`tun0` が消える）、起動し直すと約 10 秒で `listening on 100.103.43.26:8642` が出て 200 に戻った |
 
 **`AccessibilityManager.getEnabledAccessibilityServiceList()` は使わないこと。**
 Android 17 の実機では、有効になっていても自分自身が返ってこなかった
@@ -545,5 +574,7 @@ macOS 版と同じ扱いだが、スマホは PC より機微な情報が写る�
 - `FLAG_SECURE` が立っている画面（多くの銀行・決済アプリ）は、**ファイル自体は保存されるが
   中身が黒く塗られる**（Android 16 で実測）。中身は残らないが、アプリ側の宣言に依存するので
   保護の保証にはならない
-- ネットワーク送信機構を持たないので、データは `adb pull` するまで端末内に留まる
+- 外部へ送信する処理は持たない。`INTERNET` permission は `RemoteServer` が
+  tailnet 上の PC からの読み取りを受けるためだけに使う。tailnet の端末からは認証なしで読めるので、
+  tailnet に他人の端末を入れるなら、Tailscale の ACL でこの端末の 8642 番を絞ること
 - 回収したデータを解析に使う際は、PII を含む前提で扱う
