@@ -90,7 +90,7 @@ AccessibilityService 自体が system_server にバインドされた OS 管理�
 | 項目 | 値 |
 |------|-----|
 | Android Gradle Plugin | 9.3.0 |
-| Gradle | 9.7.0（wrapper で固定） |
+| Gradle | 9.7.0（wrapper で固定。`distributionSha256Sum` で配布物の SHA-256 も固定。上げるときは公式の値に差し替える） |
 | Kotlin | **宣言しない**。AGP 9.0 以降は KGP 2.2.10 が内蔵される |
 | Compose Compiler | `org.jetbrains.kotlin.plugin.compose` 2.2.10（内蔵 KGP と同じ値にする） |
 | Compose | BOM 2026.08.00 + material3 **1.5.0-alpha26** |
