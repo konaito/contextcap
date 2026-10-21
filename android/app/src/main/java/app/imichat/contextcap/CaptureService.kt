@@ -36,6 +36,8 @@ class CaptureService : AccessibilityService() {
     private val retentionWorker = Executors.newSingleThreadExecutor()
     /// 撮影直後の OCR。撮影 worker とも retention worker とも別スレッドで、内部は直列
     private lateinit var ocr: OcrIndexer
+    /// tailnet 上の PC から撮影データを読ませる。撮影とは独立に、一時停止中も動かす
+    private var remote: RemoteServer? = null
 
     private lateinit var stats: StatsStore
     private lateinit var appLog: ForegroundAppLog
@@ -131,6 +133,8 @@ class CaptureService : AccessibilityService() {
         }.getOrNull() ?: emptySet()
 
         appLog = ForegroundAppLog(this)
+        remote = RemoteServer(root, REMOTE_PORT, TailnetAddress::current) { Log.i(TAG, "remote: $it") }
+            .apply { start() }
         // サービスが止まっていた間の撮影を拾い直す。backlog キューに入るので新規撮影を待たせない
         ocr.reconcile()
         worker.execute {
@@ -150,6 +154,7 @@ class CaptureService : AccessibilityService() {
         worker.shutdown()
         retentionWorker.shutdown()
         if (::ocr.isInitialized) ocr.shutdown()
+        remote?.shutdown()
         super.onDestroy()
     }
 
@@ -435,6 +440,9 @@ class CaptureService : AccessibilityService() {
         /// 情報のない画面かどうかを判定するときのデコードサイズ（長辺）。
         /// 原寸を読む必要はなく、格子で見るのに足りればいい
         const val BLACKNESS_MAX_PIXEL = 160
+
+        /// `RemoteServer` の待ち受けポート。Tailscale のアドレスでだけ開く
+        const val REMOTE_PORT = 8642
 
         /// 容量上限。テスト時はこの定数を書き換えて再ビルドする（README 参照）
         const val DEFAULT_BUDGET_BYTES = 10_000_000_000L

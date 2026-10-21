@@ -67,7 +67,7 @@ dependencies {
 
     // OCR は ML Kit の日本語モデルを **bundled** で入れる。
     // play-services-mlkit-* (unbundled) は初回にモデルをネットワーク取得し Play Services を
-    // 必須にするので、「ネットワーク送信なし・すべてローカル」という前提と噛み合わない。
+    // 必須にするので、「外部への送信なし・すべてローカル」という前提と噛み合わない。
     // 代償として APK が数 MB 増える（release で R8 を通した実測値は README に書く）。
     implementation("com.google.mlkit:text-recognition-japanese:16.0.1")
 

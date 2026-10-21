@@ -4,6 +4,9 @@
     <!-- 充電中だけ OCR を回す。画面オフだと充電中でも CPU が寝るので、消化中だけ持つ -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!-- RemoteServer が tailnet 上の PC からの読み取りを受ける。外へ送る処理は無い -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
