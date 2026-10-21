@@ -1,6 +1,13 @@
 package app.imichat.contextcap.ui
 
 import android.content.Intent
+import android.content.ClipData
+import android.content.ClipDescription
+import android.content.ClipboardManager
+import android.os.PersistableBundle
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.material3.Switch
+import app.imichat.contextcap.RemoteAccess
 import android.provider.Settings
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -111,6 +118,14 @@ fun HomeScreen(onOpenViewer: (Int) -> Unit, onOpenText: () -> Unit) {
                         state.reloadUsage()
                     }
                 },
+            )
+
+            RemoteSection(
+                enabled = state.remoteEnabled,
+                token = state.remoteToken,
+                tailnetAddress = state.snapshot?.tailnetAddress,
+                onToggle = { state.toggleRemote(context) },
+                onRegenerate = { state.regenerateRemoteToken(context) },
             )
 
             Numbers(snapshot = state.snapshot, onOpenText = onOpenText)
@@ -310,7 +325,12 @@ private fun Numbers(snapshot: CaptureSnapshot?, onOpenText: () -> Unit) {
             modifier = Modifier.padding(top = 16.dp),
         )
         Text(
-            text = "端末内にだけ保存されます。送信は行いません。",
+            // 「送信は行いません」とは書かない。パソコンから読む機能と、ML Kit の診断データ送信がある
+            text = if (snapshot?.remoteEnabled == true) {
+                "画像と文字はこの端末に保存します。「パソコンから読む」がオンの間は、合鍵を持つ tailnet の端末から読めます。"
+            } else {
+                "画像と文字はこの端末に保存します。"
+            },
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.outline,
             modifier = Modifier.padding(top = 6.dp),
@@ -337,6 +357,80 @@ private fun NumberRow(label: String, value: String, onClick: (() -> Unit)? = nul
             text = if (onClick != null) "$value ›" else value,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface,
+        )
+    }
+}
+
+/// 「パソコンから読む」。既定はオフで、オンにした人だけ tailnet に口を開ける。
+///
+/// オンの間は URL（合鍵入り）を出す。合鍵を知っている人は画像も文字も全部読めるので、
+/// コピーするときはクリップボードのプレビューに出さない（`EXTRA_IS_SENSITIVE`）
+@Composable
+private fun RemoteSection(
+    enabled: Boolean,
+    token: String,
+    tailnetAddress: String?,
+    onToggle: () -> Unit,
+    onRegenerate: () -> Unit,
+) {
+    val context = LocalContext.current
+    Column(modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 32.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "パソコンから読む",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
+                Text(
+                    text = "Tailscale で同じ tailnet にいる端末から、合鍵付きの URL で画像と文字を読めるようにします。" +
+                        "この端末のほかのアプリからは読めません。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
+            Switch(
+                checked = enabled,
+                onCheckedChange = { onToggle() },
+                modifier = Modifier.padding(start = 16.dp),
+            )
+        }
+        if (!enabled) return@Column
+
+        if (tailnetAddress == null) {
+            Text(
+                text = "Tailscale に繋がっていません。Tailscale アプリで接続すると、ここに URL が出ます。",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 12.dp),
+            )
+            return@Column
+        }
+        val url = RemoteAccess.url(tailnetAddress, token)
+        SelectionContainer {
+            Text(
+                text = url,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(top = 12.dp),
+            )
+        }
+        Row(modifier = Modifier.padding(top = 4.dp)) {
+            TextButton(onClick = {
+                val clip = ClipData.newPlainText("ContextCap URL", url).apply {
+                    description.extras = PersistableBundle().apply {
+                        putBoolean(ClipDescription.EXTRA_IS_SENSITIVE, true)
+                    }
+                }
+                context.getSystemService(ClipboardManager::class.java)?.setPrimaryClip(clip)
+            }) { Text("URL をコピー") }
+            TextButton(onClick = onRegenerate) { Text("合鍵を作り直す") }
+        }
+        Text(
+            text = "合鍵を作り直すと、今の URL は使えなくなります。",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.outline,
         )
     }
 }

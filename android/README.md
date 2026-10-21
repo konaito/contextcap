@@ -150,12 +150,19 @@ adb pull /storage/emulated/0/Android/data/app.imichat.contextcap/files/ContextCa
 ワイヤレスデバッグ無しで、tailnet 上の PC から `curl` で読める。
 Claude Code から端末のデータを直接見るための口。
 
+**既定はオフ。** ホームの「パソコンから読む」をオンにすると待ち受け、合鍵入りの URL
+（`http://<Tailscale のアドレス>:8642/?token=<合鍵>`）が画面に出る。「URL をコピー」で取れる。
+
 ```bash
-curl http://100.103.43.26:8642/                          # 日付ディレクトリの一覧
-curl http://100.103.43.26:8642/2026-10-21/               # ファイル名<TAB>バイト数
-curl http://100.103.43.26:8642/2026-10-21/ocr.jsonl      # 中身そのまま
-curl -o a.jpg http://100.103.43.26:8642/2026-10-21/120000_000.jpg
+TOKEN=...   # 画面の URL の token= 以降
+curl -H "Authorization: Bearer $TOKEN" http://100.103.43.26:8642/                  # 日付ディレクトリの一覧
+curl -H "Authorization: Bearer $TOKEN" http://100.103.43.26:8642/2026-10-21/       # ファイル名<TAB>バイト数
+curl -H "Authorization: Bearer $TOKEN" http://100.103.43.26:8642/2026-10-21/ocr.jsonl
+curl -o a.jpg "http://100.103.43.26:8642/2026-10-21/120000_000.jpg?token=$TOKEN"   # クエリでも渡せる
 ```
+
+合鍵は `shared_prefs/contextcap.xml` の `RemoteToken` にある。debug ビルドなら
+`adb shell run-as app.imichat.contextcap cat shared_prefs/contextcap.xml` でも読める。
 
 `100.103.43.26` はこの端末の Tailscale アドレス。tailnet から端末を外さない限り変わらない。
 ホスト名（`pixel-10-pro-fold.tail6e54b5.ts.net`）は、この Mac では引けなかった（2026-10-21）。
@@ -166,9 +173,14 @@ curl -o a.jpg http://100.103.43.26:8642/2026-10-21/120000_000.jpg
   ポートは開かない。Tailscale のインターフェースは `fd7a:115c:a1e0::/48`（Tailscale 固有の IPv6）を
   持つものとして探す（`TailnetAddress`）。100.64.0.0/10 だけで判定すると、
   キャリアの CGNAT アドレスを掴んでしまう
-- 認証は Tailscale 側に任せていて、アプリ側には無い。tailnet の端末からは誰でも読める
+- **合鍵（端末ごとの 32 バイトの乱数）が無いと 401。** `Authorization: Bearer` か `?token=` で渡す。
+  画面の「合鍵を作り直す」で替えると、古い URL はその場で使えなくなる
+- **同じ端末からの接続は 403。** Tailscale のアドレスは端末自身のアドレスなので、INTERNET 権限を持つ
+  他アプリが繋ぐと届いてしまう。2026-10-22 の実機で、アプリとは別の uid 2000 から `200 OK` が返ったので塞いだ
+- 接続は処理中 2 + 順番待ち 6 まで。超えた分はすぐ閉じる。要求行とヘッダは 1 行 8KB・64 行・
+  合計 32KB・15 秒までで、超えたら 400
 - Tailscale が後から繋がった・アドレスが変わった場合は 30 秒以内に張り直す
-- 撮影の一時停止中も動く（サービスが生きている間は常時）。コード上の挙動で、実機では未確認
+- 撮影の一時停止とは連動しない。止めるのは「パソコンから読む」のスイッチ
 - 撮影・OCR・削除とはスレッドを共有しない
 
 ## 容量管理（14 日保持・再圧縮なし）
@@ -585,7 +597,10 @@ macOS 版と同じ扱いだが、スマホは PC より機微な情報が写る�
 - `FLAG_SECURE` が立っている画面（多くの銀行・決済アプリ）は、**ファイル自体は保存されるが
   中身が黒く塗られる**（Android 16 で実測）。中身は残らないが、アプリ側の宣言に依存するので
   保護の保証にはならない
-- 外部へ送信する処理は持たない。`INTERNET` permission は `RemoteServer` が
-  tailnet 上の PC からの読み取りを受けるためだけに使う。tailnet の端末からは認証なしで読めるので、
-  tailnet に他人の端末を入れるなら、Tailscale の ACL でこの端末の 8642 番を絞ること
+- 撮影データを外部へ送る処理は持たない。`INTERNET` permission はアプリ自身では `RemoteServer` が
+  tailnet 上の PC からの読み取りを受けるためだけに使う（既定はオフ、合鍵が要る）。
+  tailnet に他人の端末を入れるなら、合鍵に加えて Tailscale の ACL でこの端末の 8642 番を絞ること
+- ML Kit は bundled でも診断データ（端末情報・アプリ情報・インストールごとの ID・性能指標）を
+  Google に送る（[ML Kit のデータ開示](https://developers.google.com/ml-kit/android-data-disclosure)）。
+  release のマニフェストに `datatransport` の部品が入っていることは確認したが、実際の通信は未計測
 - 回収したデータを解析に使う際は、PII を含む前提で扱う

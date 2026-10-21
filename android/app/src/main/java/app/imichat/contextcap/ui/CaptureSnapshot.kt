@@ -6,7 +6,9 @@ import androidx.core.content.edit
 import app.imichat.contextcap.AppUsage
 import app.imichat.contextcap.AppUsageStats
 import app.imichat.contextcap.CaptureService
+import app.imichat.contextcap.RemoteAccess
 import app.imichat.contextcap.StatsStore
+import app.imichat.contextcap.TailnetAddress
 import app.imichat.contextcap.TextArchive
 import java.io.File
 
@@ -26,6 +28,10 @@ data class CaptureSnapshot(
     val rootPath: String,
     /// 直近の撮影が情報のない画面（DRM 保護・AOD）で、保存を見送ったか
     val blackout: Boolean,
+    /// 「パソコンから読む」がオンか
+    val remoteEnabled: Boolean,
+    /// この端末の Tailscale のアドレス。Tailscale に繋がっていなければ null
+    val tailnetAddress: String?,
 ) {
     val recording: Boolean get() = enabled && !paused
 }
@@ -103,5 +109,8 @@ fun readSnapshot(context: Context): CaptureSnapshot {
         qualityText = "等倍 q${CaptureService.FULL_RES_QUALITY}",
         rootPath = root.absolutePath,
         blackout = prefs.getBoolean(CaptureService.KEY_UNINFORMATIVE, false),
+        remoteEnabled = RemoteAccess.isEnabled(context),
+        // インターフェースの列挙なので IO スレッドで取る（readSnapshot 自体が IO 専用）
+        tailnetAddress = TailnetAddress.current()?.hostAddress,
     )
 }
