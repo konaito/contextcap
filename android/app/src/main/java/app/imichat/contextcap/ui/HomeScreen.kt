@@ -64,7 +64,7 @@ import java.io.File
 /// 主役は撮れている画像。数字は最下部に置く。
 /// 記録中は次の撮影までの進捗が動くので、放置していても生きていることが目に入る。
 @Composable
-fun HomeScreen(onOpenViewer: (Int) -> Unit) {
+fun HomeScreen(onOpenViewer: (Int) -> Unit, onOpenText: () -> Unit) {
     val context = LocalContext.current
     val state = rememberHomeState()
     val scope = rememberCoroutineScope()
@@ -113,7 +113,7 @@ fun HomeScreen(onOpenViewer: (Int) -> Unit) {
                 },
             )
 
-            Numbers(snapshot = state.snapshot)
+            Numbers(snapshot = state.snapshot, onOpenText = onOpenText)
 
             PauseRow(
                 enabled = state.snapshot?.enabled == true,
@@ -286,14 +286,16 @@ private fun RecentStrip(
 
 /// 数字は最下部。確認したい時だけ読めればいい
 @Composable
-private fun Numbers(snapshot: CaptureSnapshot?) {
+private fun Numbers(snapshot: CaptureSnapshot?, onOpenText: () -> Unit) {
     Column(modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 32.dp)) {
         HorizontalDivider(
             color = MaterialTheme.colorScheme.outlineVariant,
             modifier = Modifier.padding(bottom = 20.dp),
         )
         NumberRow("これまでに見たもの", snapshot?.countText ?: "—")
-        NumberRow("記録している期間", snapshot?.durationText ?: "—")
+        NumberRow("画像が残っている期間", snapshot?.durationText ?: "—")
+        // 画像は容量上限で古い順に消えるが、読み取った文字は消さない。ここから読める
+        NumberRow("文字が残っている期間", snapshot?.textSpanText ?: "—", onClick = onOpenText)
         NumberRow(
             "使っている容量",
             snapshot?.let { "${it.sizeText} / ${it.budgetText}" } ?: "—",
@@ -317,10 +319,11 @@ private fun Numbers(snapshot: CaptureSnapshot?) {
 }
 
 @Composable
-private fun NumberRow(label: String, value: String) {
+private fun NumberRow(label: String, value: String, onClick: (() -> Unit)? = null) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            .let { if (onClick != null) it.clickable(onClick = onClick) else it }
             .padding(vertical = 8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
@@ -330,7 +333,8 @@ private fun NumberRow(label: String, value: String) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Text(
-            text = value,
+            // 押せる行だけ矢印を付ける。色は増やさない（色は記録状態の 2 箇所だけに使う）
+            text = if (onClick != null) "$value ›" else value,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface,
         )

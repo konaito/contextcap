@@ -22,6 +22,7 @@ class SetupActivity : ComponentActivity() {
                                 .putExtra(ViewerActivity.EXTRA_INDEX, index),
                         )
                     },
+                    onOpenText = { startActivity(Intent(this, TextActivity::class.java)) },
                 )
             }
         }

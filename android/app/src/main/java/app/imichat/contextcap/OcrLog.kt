@@ -72,6 +72,101 @@ object OcrLog {
 
     private val STEM_PATTERN = Regex("""^\{"t":"([^"]+)"""")
 
+    /// その日の OCR 結果を時刻順に読む。テキスト閲覧画面用で、IO スレッド専用。
+    ///
+    /// 同じ timeStem が複数行あることがある（実機 2026-10-15 で 696 件）。後から書いた方を残す。
+    fun readDay(dayDir: File): List<Entry> {
+        val file = File(dayDir, FILE_NAME)
+        if (!file.isFile) return emptyList()
+        val byStem = LinkedHashMap<String, Entry>()
+        runCatching {
+            file.forEachLine { line -> parseLine(line)?.let { byStem[it.timeStem] = it } }
+        }
+        return byStem.values.sortedBy { it.timeStem }
+    }
+
+    /// `append` が書いた 1 行を読み戻す。壊れた行（途中で落ちた最後の 1 行など）は null。
+    ///
+    /// 値が文字列か整数だけの平らなオブジェクトしか書かないので、汎用の JSON パーサは要らない
+    fun parseLine(line: String): Entry? {
+        val fields = parseFlatObject(line) ?: return null
+        val stem = fields["t"] ?: return null
+        return Entry(
+            timeStem = stem,
+            gen = fields["gen"]?.toIntOrNull() ?: 0,
+            width = fields["w"]?.toIntOrNull() ?: 0,
+            height = fields["h"]?.toIntOrNull() ?: 0,
+            bytes = fields["bytes"]?.toLongOrNull() ?: 0,
+            lines = fields["lines"]?.toIntOrNull() ?: 0,
+            ms = fields["ms"]?.toLongOrNull() ?: 0,
+            status = fields["status"] ?: return null,
+            text = fields["text"] ?: "",
+            err = fields["err"],
+        )
+    }
+
+    /// `{"k":"v","n":1}` の形だけを読む。合わなければ null
+    private fun parseFlatObject(s: String): Map<String, String>? {
+        val out = HashMap<String, String>()
+        var i = s.indexOf('{')
+        if (i < 0) return null
+        i++
+        while (true) {
+            while (i < s.length && s[i].isWhitespace()) i++
+            if (i >= s.length) return null
+            if (s[i] == '}') return out
+            if (s[i] == ',') { i++; continue }
+            if (s[i] != '"') return null
+            val (key, afterKey) = readString(s, i) ?: return null
+            i = afterKey
+            while (i < s.length && s[i].isWhitespace()) i++
+            if (i >= s.length || s[i] != ':') return null
+            i++
+            while (i < s.length && s[i].isWhitespace()) i++
+            if (i >= s.length) return null
+            if (s[i] == '"') {
+                val (value, afterValue) = readString(s, i) ?: return null
+                out[key] = value
+                i = afterValue
+            } else {
+                val start = i
+                while (i < s.length && s[i] != ',' && s[i] != '}') i++
+                if (i >= s.length) return null
+                out[key] = s.substring(start, i).trim()
+            }
+        }
+    }
+
+    /// `start` の引用符から始まる文字列を読み、値と閉じ引用符の次の位置を返す。`escape` の逆
+    private fun readString(s: String, start: Int): Pair<String, Int>? {
+        val sb = StringBuilder()
+        var i = start + 1
+        while (i < s.length) {
+            val c = s[i]
+            when (c) {
+                '"' -> return sb.toString() to i + 1
+                '\\' -> {
+                    if (i + 1 >= s.length) return null
+                    when (val e = s[i + 1]) {
+                        'n' -> sb.append('\n')
+                        'r' -> sb.append('\r')
+                        't' -> sb.append('\t')
+                        'u' -> {
+                            if (i + 6 > s.length) return null
+                            val code = s.substring(i + 2, i + 6).toIntOrNull(16) ?: return null
+                            sb.append(code.toChar())
+                            i += 4
+                        }
+                        else -> sb.append(e)
+                    }
+                    i += 2
+                }
+                else -> { sb.append(c); i++ }
+            }
+        }
+        return null
+    }
+
     /// JSON 文字列としての最小限のエスケープ。OCR テキストには改行も引用符も入る
     private fun escape(s: String): String {
         val sb = StringBuilder(s.length + 16)

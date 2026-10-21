@@ -7,6 +7,7 @@ import app.imichat.contextcap.AppUsage
 import app.imichat.contextcap.AppUsageStats
 import app.imichat.contextcap.CaptureService
 import app.imichat.contextcap.StatsStore
+import app.imichat.contextcap.TextArchive
 import java.io.File
 
 /// 画面に出す値をまとめたもの。
@@ -17,6 +18,8 @@ data class CaptureSnapshot(
     val paused: Boolean,
     val countText: String,
     val durationText: String,
+    /// OCR テキストが残っている期間。画像は容量上限で消えるがテキストは消さないので、別に数える
+    val textSpanText: String,
     val sizeText: String,
     val budgetText: String,
     val qualityText: String,
@@ -93,6 +96,7 @@ fun readSnapshot(context: Context): CaptureSnapshot {
         paused = prefs.getBoolean(CaptureService.KEY_PAUSED, false),
         countText = stats.countText,
         durationText = stats.durationText,
+        textSpanText = TextArchive.spanText(TextArchive.days(root)),
         sizeText = stats.sizeText,
         budgetText = StatsStore.formatBytes(budget),
         // 段階圧縮を廃止したので常に等倍
