@@ -49,7 +49,7 @@ private const val MAX_ITEMS = 300
 /// スワイプにしないのは、ページャが増える分の依存と実装に見合わないため。
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun ViewerScreen(startIndex: Int) {
+fun ViewerScreen(startIndex: Int, path: String? = null) {
     val context = LocalContext.current
     val root = remember { CaptureService.captureRoot(context) }
     // 画面の長辺（px）。これ以上大きくデコードしても表示に使われず、メモリを食うだけ。
@@ -64,7 +64,9 @@ fun ViewerScreen(startIndex: Int) {
     var loading by remember { mutableStateOf(true) }
 
     LaunchedEffect(Unit) {
-        val found = withContext(Dispatchers.IO) { CaptureBrowser.latest(root, MAX_ITEMS) }
+        val found = withContext(Dispatchers.IO) {
+            if (path != null) listOf(File(path)).filter { it.isFile } else CaptureBrowser.latest(root, MAX_ITEMS)
+        }
         files = found
         index = startIndex.coerceIn(0, maxOf(0, found.size - 1))
     }

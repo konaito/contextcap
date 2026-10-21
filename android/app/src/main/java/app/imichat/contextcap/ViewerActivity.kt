@@ -12,9 +12,10 @@ class ViewerActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         actionBar?.hide()
         val start = intent.getIntExtra(EXTRA_INDEX, 0)
+        val path = intent.getStringExtra(EXTRA_PATH)
         setContent {
             ContextCapTheme {
-                ViewerScreen(startIndex = start)
+                ViewerScreen(startIndex = start, path = path)
             }
         }
     }
@@ -22,5 +23,7 @@ class ViewerActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_INDEX = "index"
+        /// 指定した 1 枚だけを開く。テキスト閲覧から飛ぶ時に使う（index は最新 300 枚の中しか指せない）
+        const val EXTRA_PATH = "path"
     }
 }

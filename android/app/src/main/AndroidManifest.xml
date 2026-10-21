@@ -23,6 +23,10 @@
             android:name=".ViewerActivity"
             android:exported="false" />
 
+        <activity
+            android:name=".TextActivity"
+            android:exported="false" />
+
         <service
             android:name=".CaptureService"
             android:exported="true"
