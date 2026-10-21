@@ -6,7 +6,8 @@ import java.util.Date
 data class RetentionResult(
     var deleted: Int = 0,
     var freedBytes: Long = 0,
-    /// OCR がまだ済んでいないので消せなかった枚数。0 でないなら OCR が詰まっている
+    /// 文字が確定していないので消せなかった枚数（未 OCR・OCR 失敗・壊れた行）。
+    /// 0 でないなら OCR が詰まっているか、読めない画像が残っている
     var blockedByOcr: Int = 0,
 )
 
@@ -75,10 +76,10 @@ class Retention(
             if (!tooOld && !overBudget) break
 
             val indexed = indexedByDay.getOrPut(entry.dayDir.name) {
-                OcrLog.indexedStems(entry.dayDir)
+                OcrLog.textSecuredStems(entry.dayDir)
             }
             if (entry.stem !in indexed) {
-                // まだ読めていない。消したらテキストごと永久に失われる
+                // まだ読めていない、または読めなかった。消したらその画面の記録が何も残らない
                 result.blockedByOcr++
                 continue
             }

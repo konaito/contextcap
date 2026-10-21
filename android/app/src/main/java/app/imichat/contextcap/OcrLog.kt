@@ -52,8 +52,9 @@ object OcrLog {
         runCatching { File(dayDir, FILE_NAME).appendText(sb.append('\n').toString()) }
     }
 
-    /// その日の OCR 済み timeStem。`Retention` の削除ガードと `OcrIndexer` の追いつきが使う。
+    /// その日に OCR を試した timeStem。`OcrIndexer` の追いつきが使う。
     /// status が failed でも「読もうとした」記録なので含める（無限に再試行しないため）。
+    /// **削除の判断には使わない。**そちらは `textSecuredStems`。
     ///
     /// `t` は `HHmmss_SSS`（SimpleDateFormat の出力）なので引用符もバックスラッシュも
     /// 含まない。だから行頭の固定位置を正規表現で拾えば足りる。JSON 全体をパースしない。
@@ -65,6 +66,24 @@ object OcrLog {
             file.forEachLine { line ->
                 // 途中で落ちた最後の 1 行が壊れていることがある。合わない行は捨てる
                 STEM_PATTERN.find(line)?.groupValues?.get(1)?.let { out.add(it) }
+            }
+        }
+        return out
+    }
+
+    /// 文字が確定した timeStem（status が ok か empty の行）。`Retention` の削除ガードが使う。
+    ///
+    /// failed の行と、途中で切れた行は含めない。どちらも文字が取れていないので、画像を消すと
+    /// その画面の記録が何も残らない。macOS の `indexedKeys` が failed を除くのと同じ扱い。
+    /// 以前は `indexedStems` を流用していて、failed や壊れた行の画像も削除対象になっていた
+    fun textSecuredStems(dayDir: File): Set<String> {
+        val file = File(dayDir, FILE_NAME)
+        if (!file.isFile) return emptySet()
+        val out = HashSet<String>()
+        runCatching {
+            file.forEachLine { line ->
+                val entry = parseLine(line) ?: return@forEachLine
+                if (entry.status == "ok" || entry.status == "empty") out.add(entry.timeStem)
             }
         }
         return out

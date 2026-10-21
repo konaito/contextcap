@@ -42,12 +42,14 @@ class RetentionTest {
     }
 
     /// その日の ocr.jsonl に「OCR 済み」の 1 行を足す
-    private fun markIndexed(day: String, timeStem: String) {
+    private fun markIndexed(day: String, timeStem: String, status: String = "ok") {
         OcrLog.append(
             File(root, day),
             OcrLog.Entry(
                 timeStem = timeStem, gen = 0, width = 1080, height = 2400,
-                bytes = 100, lines = 10, ms = 300, status = "ok", text = "hello",
+                bytes = 100, lines = 10, ms = 300, status = status,
+                text = if (status == "ok") "hello" else "",
+                err = if (status == "failed") "decode failed" else null,
             ),
         )
     }
@@ -160,5 +162,46 @@ class RetentionTest {
             File(File(root, day(20)), OcrLog.FILE_NAME).exists(),
             "テキストは画像が無くても正解データになるので消さない",
         )
+    }
+
+    @Test
+    fun `OCR に失敗した画像は保持期間を過ぎても消さない`() {
+        val failed = jpg(day(20), "120000_000")
+        markIndexed(day(20), "120000_000", status = "failed")
+
+        val result = retention().sweep()!!
+        assertTrue(failed.exists())
+        assertEquals(0, result.deleted)
+        assertEquals(1, result.blockedByOcr)
+    }
+
+    @Test
+    fun `文字が 1 つも無い画面（empty）は OCR 済みとして消す`() {
+        val empty = jpg(day(20), "120000_000")
+        markIndexed(day(20), "120000_000", status = "empty")
+
+        assertEquals(1, retention().sweep()!!.deleted)
+        assertFalse(empty.exists())
+    }
+
+    @Test
+    fun `途中で切れた行しか無い画像は消さない`() {
+        val file = jpg(day(20), "120000_000")
+        File(File(root, day(20)), OcrLog.FILE_NAME)
+            .appendText("""{"t":"120000_000","gen":0,"w":1080,"status":"ok","text":"途中""")
+
+        val result = retention().sweep()!!
+        assertTrue(file.exists())
+        assertEquals(1, result.blockedByOcr)
+    }
+
+    @Test
+    fun `OCR に失敗した画像は追いつき対象にも戻さない`() {
+        // 失敗した画像を毎回読み直さないため。消さないことと、読み直さないことは別の判断
+        jpg(day(20), "120000_000")
+        markIndexed(day(20), "120000_000", status = "failed")
+        val dayDir = File(root, day(20))
+        assertTrue("120000_000" in OcrLog.indexedStems(dayDir))
+        assertFalse("120000_000" in OcrLog.textSecuredStems(dayDir))
     }
 }
