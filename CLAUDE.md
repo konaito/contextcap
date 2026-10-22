@@ -123,6 +123,13 @@ DB は `scripts/ocr-extract.swift` と同じ `~/ContextCap-analysis/ocr.sqlite`�
 - スリープ・ロック中は ScreenCaptureKit が失敗する。**エラーは無視して次の tick へ**（落とさない）
 - ディスプレイ構成が変わるたび `SCShareableContent` を取り直す
 
+`scripts/contextcap-mcp.py` は `ocr.sqlite` を読むだけの MCP サーバー（uv の inline script・`mcp` 2.x）。
+アプリには入っていない。検証は実 DB に対して関数を直接呼ぶか、MCP クライアントから stdio でつなぐ。
+- **語 → フレームの SQL は `line_runs CROSS JOIN frames` と `+f.status` / `+f.ts` で結合順を固定している。**
+  外すと SQLite が `frames_status` で全フレームを舐める計画を選ぶ（`"TypeError"` の全期間検索で 14.6 秒 → 0.14 秒）
+- 「割って引き直す」は句 1 つ（`"..."` か空白のない 1 語）のときだけ。キーワード列で割ると言い換え検索が落ちた。
+  数値は `docs/results/2026-10-23-search-eval.md`
+
 ### Android 版（`android/app/src/main/java/app/imichat/contextcap/`）
 
 **ForegroundService も常時通知もバッテリー最適化除外も持たない。**
