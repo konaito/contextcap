@@ -1,7 +1,8 @@
 import Foundation
 import ServiceManagement
 
-/// SMAppService によるログイン時自動起動の登録・解除
+/// SMAppService によるログイン時自動起動の登録・解除。
+/// 登録はメニューの「ログイン時に起動」からだけ行う（既定はオフ）。すでに登録済みの環境はそのまま残る
 enum LaunchAtLogin {
     static var isEnabled: Bool {
         SMAppService.mainApp.status == .enabled
@@ -26,17 +27,6 @@ enum LaunchAtLogin {
         } catch {
             NSLog("LaunchAtLogin unregister failed: \(error)")
             return false
-        }
-    }
-
-    /// 初回起動時のデフォルト ON 登録（ユーザーが明示的に OFF にしたら再登録しない）
-    static func registerOnFirstLaunch() {
-        let key = "ContextCapDidDefaultRegisterLaunchAtLogin"
-        let defaults = UserDefaults.standard
-        guard !defaults.bool(forKey: key) else { return }
-        defaults.set(true, forKey: key)
-        if !isEnabled {
-            enable()
         }
     }
 }

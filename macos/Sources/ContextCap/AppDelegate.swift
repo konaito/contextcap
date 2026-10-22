@@ -55,7 +55,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.delegate = self
         statusItem.menu = menu
 
-        LaunchAtLogin.registerOnFirstLaunch()
+        // ログイン項目には勝手に登録しない。メニューの「ログイン時に起動」で利用者が選ぶ
+        // （以前は初回起動で無条件に登録していた。App Review Guidelines 2.4.5(iii) にも反する）
         capture.start()
         keyLog.start()
         schedulePermissionRetryIfNeeded()
@@ -95,7 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(disabledItem("撮影画質: \(capture.profileText)"))
         menu.addItem(disabledItem("保持: \(Retention.retentionDays) 日（OCR 済みのみ削除）"))
         menu.addItem(disabledItem(indexer.statusText))
-        menu.addItem(disabledItem("キー記録: \(keyLog.isActive ? "有効" : "アクセシビリティ権限が必要")"))
+        menu.addItem(disabledItem("キー記録: \(keyLogStatusText)"))
         if let last = lastSweep {
             var line = "前回の削除: \(last.deleted) 枚"
             // 消せなかった分は必ず見せる。黙って溜まると容量だけ増えて原因が分からない
@@ -115,7 +116,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             menu.addItem(actionItem("システム設定で権限を許可…", #selector(openPrivacySettings)))
         }
 
-        if !keyLog.isActive {
+        // 一時停止中は止めているだけなので、権限の案内は出さない
+        if !keyLog.isActive && capture.state != .paused {
             menu.addItem(actionItem("キー記録を許可（アクセシビリティ）…", #selector(openAccessibilitySettings)))
         }
 
@@ -170,12 +172,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - Actions
 
+    /// 一時停止は撮影とキー記録の両方を止める。以前は撮影だけ止まり、キー記録は続いていた
     @objc private func togglePause() {
         if capture.state == .running {
             capture.pause()
+            keyLog.stop()
         } else {
             capture.start()
+            keyLog.start()
         }
+    }
+
+    private var keyLogStatusText: String {
+        if keyLog.isActive { return "有効" }
+        if capture.state == .paused { return "一時停止中" }
+        return "アクセシビリティ権限が必要"
     }
 
     @objc private func openTextBrowser() {
