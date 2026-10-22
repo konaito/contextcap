@@ -138,7 +138,7 @@ defaults delete app.imichat.contextcap StorageBudgetGB              # 戻す
   （テキストなので容量は画像より桁違いに小さい）
 - **要アクセシビリティ権限。**無いとモニタは 1 件も配信しない（黙って空振り）。`AXIsProcessTrusted()`
   で確認し、無ければプロンプト＋10 秒ごとに再試行する。メニューに「キー記録: 有効／権限が必要」を出す。
-  再ビルドで ad-hoc 署名が変わると画面収録と同様この権限も剥がれる
+  ad-hoc 署名の場合は、再ビルドで画面収録と同様この権限も剥がれる（Developer ID 署名なら外れない）
 - **IME の変換前ローマ字しか取れない。**確定後の日本語は画面の OCR 側で補う前提
 - **パスワードは基本入らない。**セキュア入力中は OS が secure event input を有効にし、
   グローバルモニタにキーが届かない。とはいえ通常テキストは全部残るので、`~/ContextCap` は
@@ -198,8 +198,10 @@ open /Applications/ContextCap.app
 - スリープ・画面ロック中は ScreenCaptureKit が失敗するので、エラーは無視して次の tick へ（クラッシュさせない）
 - ディスプレイ構成変更（外部モニタ抜き差し）のたびに `SCShareableContent` を取り直す
 - 権限がない状態では撮影を止め、メニューに「権限がありません」を表示する
-- 署名は ad-hoc（配布しない前提）。画面収録権限は ad-hoc 署名でも付与できるが、
-  **再ビルドすると署名が変わって権限が剥がれる**ので、ビルドのたびに再許可が必要
+- 署名は、キーチェーンに Developer ID Application の証明書があればそれで行う（`--options runtime --timestamp`）。
+  designated requirement が identifier + チーム ID になり、**再ビルドしても権限は外れない**。
+  証明書が無ければ ad-hoc になり、designated requirement が cdhash そのものなので、ビルドのたびに再許可が要る。
+  `SIGN_IDENTITY` で明示でき、`SIGN_IDENTITY=-` で ad-hoc を強制する。公証（notarize）はまだしていない
 
 ## 撮影パラメータの考え方
 
