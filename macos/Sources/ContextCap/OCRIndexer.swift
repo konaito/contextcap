@@ -55,6 +55,16 @@ final class OCRIndexer: @unchecked Sendable {
 
     /// `queue` の上でだけ触る
     private var store: OCRStore?
+    /// 撮影直後の分だけ数える（backlog の読み直しは数えない。壊れた画像が溜まっているだけで
+    /// 再起動を繰り返さないように）。`queue` の上でだけ触る
+    private var freshFailures = OCRFailureStreak(threshold: OCRIndexer.stuckThreshold)
+
+    /// 撮影直後の OCR が `stuckThreshold` 回続けて失敗した時に、`queue` の上から 1 回呼ばれる。
+    /// Vision がプロセス内で壊れた状態に入ったとみなし、AppDelegate がアプリを再起動する
+    var onStuck: (@Sendable () -> Void)?
+
+    /// 5 秒に 1 枚なので、約 50 秒続けて失敗したら再起動する
+    static let stuckThreshold = 10
 
     init(databaseURL: URL = OCRIndexer.defaultDatabaseURL) {
         self.dbURL = databaseURL
@@ -93,7 +103,10 @@ final class OCRIndexer: @unchecked Sendable {
     func reconcile(root: URL) {
         queue.async { [self] in
             guard let store = openStoreIfNeeded() else { return }
-            let known = store.existingKeys()
+            // failed の行は「まだ読めていない」とみなして読み直す。失敗は一時的なことが多く
+            // （OCRFailureStreak の説明を参照）、読み直さないとその画面の文字が永久に欠ける。
+            // 画像は Retention が failed を消さないので残っている
+            let known = store.existingKeys(excludingFailed: true)
 
             var missing: [(Date, URL)] = []
             let keys: [URLResourceKey] = [.isRegularFileKey]
@@ -141,26 +154,34 @@ final class OCRIndexer: @unchecked Sendable {
                 // fresh を必ず先に見る。撮影中はここだけが回り、backlog は
                 // 撮影の合間（1 枚 5 秒のうち OCR は 0.6 秒）に少しずつ進む
                 let url: URL
+                let isFresh: Bool
                 if !fresh.isEmpty {
                     url = fresh.removeFirst()
+                    isFresh = true
                 } else if !backlog.isEmpty {
                     url = backlog.removeFirst()
+                    isFresh = false
                 } else {
                     draining = false
                     lock.unlock()
                     return
                 }
                 lock.unlock()
-                process(url)
+                guard let status = process(url), isFresh else { continue }
+                if freshFailures.record(failed: status == "failed") {
+                    NSLog("OCR: 撮影直後の OCR が \(Self.stuckThreshold) 回続けて失敗した")
+                    onStuck?()
+                }
             }
         }
     }
 
-    /// `queue` の上でだけ呼ばれる
-    private func process(_ url: URL) {
-        guard let store = openStoreIfNeeded() else { return }
+    /// `queue` の上でだけ呼ばれる。記録した status（ok / empty / failed）を返す。何も記録しなければ nil
+    @discardableResult
+    private func process(_ url: URL) -> String? {
+        guard let store = openStoreIfNeeded() else { return nil }
         // Retention に消された後で回ってくることがある。エラーにしない
-        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
 
         let day = url.deletingLastPathComponent().lastPathComponent
         let base = CaptureFile.baseName(of: url)
@@ -179,7 +200,7 @@ final class OCRIndexer: @unchecked Sendable {
                 status: "failed", err: "デコード失敗"
             ))
             lock.lock(); failedCount += 1; lock.unlock()
-            return
+            return "failed"
         }
 
         let t0 = DispatchTime.now().uptimeNanoseconds
@@ -233,6 +254,7 @@ final class OCRIndexer: @unchecked Sendable {
         lock.lock()
         if status == "failed" { failedCount += 1 } else { indexedCount += 1 }
         lock.unlock()
+        return status
     }
 
     private func openStoreIfNeeded() -> OCRStore? {

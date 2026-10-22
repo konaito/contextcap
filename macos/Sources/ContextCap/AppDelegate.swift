@@ -32,6 +32,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         stats = StatsStore(rootDirectory: Self.captureRoot)
         indexer = OCRIndexer()
+        indexer.onStuck = { [weak self] in
+            Task { @MainActor [weak self] in self?.relaunchForStuckOCR() }
+        }
         capture = CaptureManager(stats: stats, indexer: indexer)
         retention = Retention(root: Self.captureRoot)
         keyLog = KeyLog(root: Self.captureRoot)
@@ -232,6 +235,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// 終了を gaps.jsonl に残す。これが無いと、落ちた時と自分で終了した時が
     /// 解析側で区別できない（どちらも「その先に何も無い」になる）
+    /// 撮影直後の OCR が続けて失敗した時に、アプリを起動し直す。
+    /// Vision がプロセス内で壊れた状態に入ると、再起動するまで全件が失敗し続ける
+    /// （`OCRFailureStreak` の説明を参照）。起動し直すと reconcile が failed の行を読み直す。
+    /// 1 時間に 1 回まで（再起動しても直らない場合に繰り返さない）
+    private func relaunchForStuckOCR() {
+        let key = "OCRStuckRelaunchAt"
+        let defaults = UserDefaults.standard
+        let last = defaults.object(forKey: key) as? Date
+        guard OCRRelaunchPolicy.shouldRelaunch(now: Date(), last: last, minInterval: 3600) else {
+            NSLog("OCR: 失敗が続いているが、前回の再起動から 1 時間経っていないので見送る")
+            return
+        }
+        defaults.set(Date(), forKey: key)
+        NSLog("OCR: 失敗が続いたのでアプリを起動し直す")
+        // 自分が終わってから開き直す。子プロセスは親が終了しても残る
+        let relauncher = Process()
+        relauncher.executableURL = URL(fileURLWithPath: "/bin/sh")
+        relauncher.arguments = ["-c", "sleep 2; /usr/bin/open \"$0\"", Bundle.main.bundlePath]
+        do {
+            try relauncher.run()
+        } catch {
+            NSLog("OCR: 起動し直せなかった: \(error)")
+            return
+        }
+        NSApp.terminate(nil)
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         capture.recordStop()
     }

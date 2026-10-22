@@ -108,6 +108,10 @@ ScreenCaptureKit 撮影 + 等倍 JPEG 保存 + OCR キューへの enqueue）。
 2/4/8/12/20 と増やしても 1.55〜1.57 枚/秒で変わらず、同時に 1 枚しか持たないほうがメモリも軽い。
 DB は `scripts/ocr-extract.swift` と同じ `~/ContextCap-analysis/ocr.sqlite`・同じスキーマ・同じ主キー。
 
+**スリープ復帰後に Vision がプロセス内で壊れ、再起動まで全件 failed になることがある**（4 日で 16,698 件）。
+撮影直後の OCR が 10 回続けて失敗したらアプリが自分で起動し直し（1 時間に 1 回まで）、
+起動時の reconcile は failed も読み直す。詳細は `macos/README.md` の「スリープ復帰後に Vision が壊れる」。
+
 - 撮影は直列。前の撮影＋保存が終わっていなければ次の tick はスキップ
 - スリープ・ロック中は ScreenCaptureKit が失敗する。**エラーは無視して次の tick へ**（落とさない）
 - ディスプレイ構成が変わるたび `SCShareableContent` を取り直す
