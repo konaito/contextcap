@@ -137,6 +137,19 @@
     margin: 28px 0 0; padding: 20px 22px; background: var(--panel); border: 1px solid var(--line);
     border-radius: 12px; overflow-x: auto; font-family: "JetBrains Mono", monospace; font-size: 14px; line-height: 1.7;
   }
+  .ask { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-top: 40px; }
+  .ask-card { border: 1px solid var(--line); border-radius: 16px; padding: 22px; display: flex; flex-direction: column; gap: 16px; }
+  .ask-card h3 { margin: 0; font-size: 19px; font-weight: 500; }
+  .ask-card pre {
+    margin: 0; padding: 14px 16px; background: var(--panel); border-radius: 10px; white-space: pre-wrap;
+    font-family: "JetBrains Mono", "Noto Sans JP", monospace; font-size: 13px; line-height: 1.7; color: var(--muted); flex: 1;
+  }
+  .ask-card button {
+    align-self: flex-start; border: 0; cursor: pointer; font: inherit; font-size: 15px; font-weight: 500;
+    padding: 12px 20px; border-radius: 999px; background: var(--ink); color: #fff;
+  }
+  .ask-card button.done { background: var(--accent); }
+  .manual { margin-top: 36px; font-size: 15px; color: var(--muted); }
   .links { display: flex; gap: 24px; margin-top: 20px; font-size: 15px; }
   .links a { color: var(--accent); }
 
@@ -146,7 +159,7 @@
   @media (max-width: 760px) {
     nav a { display: none; }
     .hero { padding-top: 80px; }
-    .steps, .stats { grid-template-columns: 1fr; }
+    .steps, .stats, .ask { grid-template-columns: 1fr; }
     .timeline div { grid-template-columns: 1fr; gap: 4px; }
     section { padding-top: 88px; }
   }
@@ -176,7 +189,7 @@
     <p class="lead" lang="en">ContextCap captures your Mac and Android screens every few seconds and turns them into text that stays on your own machines. Your AI can read it, so you stop explaining the same thing twice.</p>
     <div class="cta">
       <a class="btn primary" href="https://github.com/konaito/contextcap"><span lang="ja">GitHub でソースを見る</span><span lang="en">View source on GitHub</span></a>
-      <a class="btn" href="/skills.md"><code>/skills.md</code> <span lang="ja">AI 向けの説明</span><span lang="en">for your agent</span></a>
+      <a class="btn" href="#agents"><span lang="ja">Claude Code・Codex に入れてもらう</span><span lang="en">Install with Claude Code or Codex</span></a>
     </div>
   </div>
 
@@ -301,8 +314,32 @@
     <div class="wrap">
       <div class="eyebrow">For agents</div>
       <h2><span lang="ja">AI に、読み方を渡す。</span><span lang="en">Give your agent the manual.</span></h2>
-      <p class="body" lang="ja"><a href="/skills.md">skills.md</a> に、データの場所、読み方、守ること、読めているかの確かめ方を書いた。Claude Code なら、次の 1 行で入る。</p>
-      <p class="body" lang="en"><a href="/skills.md">skills.md</a> tells an agent where the data lives, how to query it, what rules to follow, and how to check it is reading live data. For Claude Code, one line installs it.</p>
+      <p class="body" lang="ja"><a href="/skills.md">skills.md</a> に、データの場所、読み方、守ること、読めているかの確かめ方を書いた。下の文をコピーして、使っているエージェントに貼れば、入れて確かめるところまでやってくれる。</p>
+      <p class="body" lang="en"><a href="/skills.md">skills.md</a> tells an agent where the data lives, how to query it, what rules to follow, and how to check it is reading live data. Copy a request below and paste it into your agent. It installs the skill and checks that it works.</p>
+      <div class="ask">
+        <div class="ask-card">
+          <h3>Claude Code</h3>
+          <pre lang="ja">ContextCap のスキルを入れて。
+https://contextcap.fybe.jp/skills.md を ~/.claude/skills/contextcap/SKILL.md に保存して（フォルダが無ければ作る）。
+保存したら中身を読んで、「Check that you are really reading the archive」の手順で、手元のアーカイブを本当に読めるか確かめて。</pre>
+          <pre lang="en">Install the ContextCap skill.
+Save https://contextcap.fybe.jp/skills.md as ~/.claude/skills/contextcap/SKILL.md (create the folder if needed).
+Then read it and follow "Check that you are really reading the archive" to confirm you can read my local archive.</pre>
+          <button type="button" data-agent="Claude Code"><span lang="ja">Claude Code に頼む文をコピー</span><span lang="en">Copy the request for Claude Code</span></button>
+        </div>
+        <div class="ask-card">
+          <h3>Codex</h3>
+          <pre lang="ja">ContextCap のスキルを入れて。
+https://contextcap.fybe.jp/skills.md を ~/.agents/skills/contextcap/SKILL.md に保存して（フォルダが無ければ作る）。
+保存したら中身を読んで、「Check that you are really reading the archive」の手順で、手元のアーカイブを本当に読めるか確かめて。</pre>
+          <pre lang="en">Install the ContextCap skill.
+Save https://contextcap.fybe.jp/skills.md as ~/.agents/skills/contextcap/SKILL.md (create the folder if needed).
+Then read it and follow "Check that you are really reading the archive" to confirm you can read my local archive.</pre>
+          <button type="button" data-agent="Codex"><span lang="ja">Codex に頼む文をコピー</span><span lang="en">Copy the request for Codex</span></button>
+        </div>
+      </div>
+      <p class="manual" lang="ja">手で入れるなら（Claude Code の場合）</p>
+      <p class="manual" lang="en">To install by hand (Claude Code)</p>
       <pre class="code">mkdir -p ~/.claude/skills/contextcap &amp;&amp; curl -fsSL https://contextcap.fybe.jp/skills.md -o ~/.claude/skills/contextcap/SKILL.md</pre>
       <div class="links">
         <a href="/skills.md">/skills.md</a>
@@ -351,6 +388,27 @@
     try { saved = localStorage.getItem("lang"); } catch (e) {}
     var initial = saved || ((navigator.language || "ja").toLowerCase().indexOf("ja") === 0 ? "ja" : "en");
     apply(initial);
+    document.querySelectorAll(".ask-card button").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var lang = root.getAttribute("data-show");
+        var text = b.parentNode.querySelector('pre[lang="' + lang + '"]').textContent;
+        var label = b.dataset.label || (b.dataset.label = b.innerHTML);
+        function done() {
+          b.classList.add("done");
+          b.textContent = lang === "ja" ? "コピーした。" + b.dataset.agent + " に貼って" : "Copied. Paste it into " + b.dataset.agent;
+          setTimeout(function () { b.classList.remove("done"); b.innerHTML = label; }, 2400);
+        }
+        function fallback() {
+          var t = document.createElement("textarea");
+          t.value = text; document.body.appendChild(t); t.select();
+          try { document.execCommand("copy"); } catch (e) {}
+          document.body.removeChild(t); done();
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(done, fallback);
+        } else { fallback(); }
+      });
+    });
     document.querySelectorAll(".lang button").forEach(function (b) {
       b.addEventListener("click", function () {
         apply(b.dataset.lang);
