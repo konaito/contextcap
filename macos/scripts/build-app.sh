@@ -11,10 +11,10 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/ContextCap "$APP/Contents/MacOS/ContextCap"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 
-# アイコンは ../assets/icon.png（1024 マスター）から毎回生成する。
+# アイコンは ../assets/icon.svg（scripts/make-icons.py が生成するマスター）から毎回作る。
 # .icns をリポジトリに置かないのは、マスターと二重管理になるのを避けるため。
-# sips / iconutil は macOS 標準なので追加依存は増えない。
-ICON_SRC=../assets/icon.png
+# sips は SVG を透過つきで描けるので、sips / iconutil（macOS 標準）だけで済む。
+ICON_SRC=../assets/icon.svg
 ICONSET=build/AppIcon.iconset
 rm -rf "$ICONSET"
 mkdir -p "$ICONSET"
@@ -22,10 +22,14 @@ for spec in "16 icon_16x16" "32 icon_16x16@2x" "32 icon_32x32" "64 icon_32x32@2x
             "128 icon_128x128" "256 icon_128x128@2x" "256 icon_256x256" \
             "512 icon_256x256@2x" "512 icon_512x512" "1024 icon_512x512@2x"; do
   set -- $spec
-  sips -z "$1" "$1" "$ICON_SRC" --out "$ICONSET/$2.png" >/dev/null
+  sips -s format png -z "$1" "$1" "$ICON_SRC" --out "$ICONSET/$2.png" >/dev/null
 done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 rm -rf "$ICONSET"
+
+# メニューバーのアイコン（18pt のテンプレート画像）。AppDelegate が NSImage(named:) で読む
+sips -s format png -z 18 18 ../assets/menubar.svg --out "$APP/Contents/Resources/MenuBarIcon.png" >/dev/null
+sips -s format png -z 36 36 ../assets/menubar.svg --out "$APP/Contents/Resources/MenuBarIcon@2x.png" >/dev/null
 
 # 署名。キーチェーンに Developer ID Application の証明書があればそれで署名し、
 # 無ければ ad-hoc にする（SIGN_IDENTITY で明示もできる。"-" で ad-hoc を強制）。

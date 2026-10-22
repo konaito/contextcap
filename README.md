@@ -163,9 +163,10 @@ macOS 版に `apps.jsonl` 相当はない。
 
 ## アイコン
 
-`assets/icon.png`（1024 マスター）1 枚から両プラットフォーム分を生成する。
-macOS は `.icns` をビルドのたびに作り、Android は
-`python3 scripts/make-android-icon.py` でアダプティブアイコンの前景を書き出す。
+図柄は撮影枠の中で、画面が行にほどける形。上の塊が撮った画面、下の 3 本が残る文字を表す。
+形は `scripts/make-icons.py` の 1 か所だけで定義している。このスクリプトが
+`assets/icon.svg`、メニューバー用の `assets/menubar.svg`、Android のベクタ、LP のアイコンを書き出す。
+macOS の `.icns` とメニューバーの PNG は、`build-app.sh` がビルドのたびに SVG から作る。
 
 ## セットアップ
 
