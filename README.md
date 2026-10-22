@@ -1,18 +1,49 @@
 # ContextCap
 
-あとで解析するための画面記録を溜めておく常駐スクリーンショットレコーダー。
-数秒に 1 回、画面全体を撮影してローカルに溜め続けるだけの道具。
+コンテキストしか勝たん。
+
+AI に意図を汲んでもらうには、自分が何を見て、何をしていたかを渡すしかない。
+ContextCap は、パソコンとスマホの画面を数秒おきに撮り続け、文字に起こして手元に溜める。
+Claude Code はそれを必要な時に読みに行き、溜まった文脈から意図を汲む。
+
+## なぜ撮り続けるのか
+
+- 声を録り続けるのと同じ考え方で、パソコンとスマホの画面も撮り続ける
+- iPhone ではそれができない。だからスマホ版は Android で作っている
+- 短期的にも役に立つ。Claude Code が時々ここを読みに来て、自分の文脈から意図を汲んでくれる
+
+## Claude Code から読む
+
+パソコンの文字は SQLite に入っていて、全文検索できる。
+
+```bash
+sqlite3 -readonly ~/ContextCap-analysis/ocr.sqlite \
+  "select s.day, s.base, s.text from shots_fts f
+   join shots s on s.day = f.day and s.base = f.base
+   where shots_fts match '\"検索語\"' order by s.ts desc limit 20"
+```
+
+スマホの文字と画像は、Tailscale 経由で読む。アプリのホームで「パソコンから読む」をオンにすると、
+合鍵入りの URL が出る（既定はオフ）。
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" http://<スマホの Tailscale アドレス>:8642/2026-10-22/ocr.jsonl
+```
+
+画像も 1 枚ずつ取れる。保存形式と手順の詳細は [`CLAUDE.md`](./CLAUDE.md) と各版の README にある。
+
+## 何をして、何をしないか
+
+- 画面全体を撮って保存するだけ。クリック・入力・送信などの操作は一切しない
+- **すべてローカルに保存する**。Android 版だけ、tailnet 上の PC から読める読み取り専用の HTTP サーバーを持つ
+  （既定はオフ。オンにすると合鍵付きの URL で読める）。Android 版は ML Kit が診断データを
+  Google に送る（[ML Kit のデータ開示](https://developers.google.com/ml-kit/android-data-disclosure)。実際の通信は未計測）
+- OCR してテキストを確定させてから画像を消す。画像は数日で消えるが、文字は消さずに残す。
+  macOS 版は撮影直後、Android 版は充電中にまとめて OCR する
+- 解析機能は持たない。溜めたものは Claude Code や別の道具で読む
 
 macOS 版と Android 版があり、**保存ファイルの命名規約が同一**なので、
 回収後の解析スクリプトが両方に効く。
-
-- クリック・入力・送信などの操作は一切しない。撮って保存するだけ
-- **すべてローカル保存**。Android 版だけ、tailnet 上の PC から読める読み取り専用の HTTP サーバーを持つ
-  （既定はオフ。オンにすると合鍵付きの URL で読める）。Android 版は ML Kit が診断データを
-  Google に送る（[ML Kit のデータ開示](https://developers.google.com/ml-kit/android-data-disclosure)。実際の通信は未計測）
-- OCR してテキストを確定させてから画像を消す（画像より先にテキストを守るため）。
-  macOS 版は撮影直後、Android 版は充電中にまとめて OCR する。
-  それ以外の解析機能は持たない。溜めたものは手で回収して別の道具で読む
 
 | | macOS 版 | Android 版 |
 |---|---|---|
@@ -104,7 +135,7 @@ Compose に一切依存しない**。UI を落としても記録は動く。
 撮影を止めたアプリは一覧の先頭に別グループで固定し、**画像が 0 枚でも行を消さない**
 （消すと一覧から辿れなくなり、解除できなくなる）。
 
-もう 1 つ、**情報のない画面を保存しない**のも Android 版だけ。DRM 保護（`FLAG_SECURE`）の画面と
+もう 1 つ、**情報のない画面は保存しない**（これは macOS 版も同じ）。DRM 保護（`FLAG_SECURE`）の画面と
 AOD は撮れても中身が真っ黒なので、画像は捨てて区間だけを `blackouts.jsonl` に残す。
 
 ```
@@ -114,7 +145,6 @@ AOD は撮れても中身が真っ黒なので、画像は捨てて区間だけ�
 
 2 時間の映画なら 720 枚の黒い JPEG が 2 行になる。黒でも `apps.jsonl` には残すので、
 「Netflix を 2 時間見ていた、画面は取れていない」までは復元できる。
-macOS 版は今のところそのまま保存する。
 
 ContextCap 自身の画面も撮る。止めたければ他のアプリと同じく「アプリ別」から除外指定する。
 
