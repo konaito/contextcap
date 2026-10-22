@@ -1,0 +1,26 @@
+{
+  "name": "contextcap-pv",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "remotion studio src/index.ts",
+    "render": "remotion render src/index.ts ContextCapPromo out/contextcap-promo.mp4",
+    "still": "remotion still src/index.ts ContextCapPromo out/frame.png",
+    "audio": "uv run --with numpy python scripts/generate_audio.py",
+    "check": "tsc --noEmit",
+    "film:audio": "uv run --with numpy python scripts/generate_film_audio.py",
+    "film:render": "remotion render src/index.ts ContextCapFilm out/contextcap-film.mp4"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.434",
+    "@remotion/google-fonts": "4.0.434",
+    "@remotion/media": "4.0.434",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "remotion": "4.0.434"
+  },
+  "devDependencies": {
+    "@types/react": "^19",
+    "typescript": "^5"
+  }
+}
