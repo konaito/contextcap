@@ -36,8 +36,11 @@ class CaptureService : AccessibilityService() {
     private val retentionWorker = Executors.newSingleThreadExecutor()
     /// 撮影直後の OCR。撮影 worker とも retention worker とも別スレッドで、内部は直列
     private lateinit var ocr: OcrIndexer
-    /// tailnet 上の PC から撮影データを読ませる。撮影とは独立に、一時停止中も動かす
+    /// tailnet 上の PC から撮影データを読ませる。「パソコンから読む」をオンにした時だけ動かす。
+    /// 撮影の一時停止とは独立（止めるのは画面のスイッチ）
     private var remote: RemoteServer? = null
+    /// 今の `remote` が使っている合鍵。作り直されたら張り直す
+    private var remoteToken: String? = null
 
     private lateinit var stats: StatsStore
     private lateinit var appLog: ForegroundAppLog
@@ -89,6 +92,7 @@ class CaptureService : AccessibilityService() {
                 }
                 ACTION_SETTINGS_CHANGED -> {
                     if (isPaused()) stop() else start()
+                    updateRemote()
                 }
                 // 残量が変わるたびに飛ぶが、OcrIndexer 側で状態が変わった時だけ動く
                 Intent.ACTION_BATTERY_CHANGED -> ocr.setCharging(isPluggedIn(intent))
@@ -133,8 +137,7 @@ class CaptureService : AccessibilityService() {
         }.getOrNull() ?: emptySet()
 
         appLog = ForegroundAppLog(this)
-        remote = RemoteServer(root, REMOTE_PORT, TailnetAddress::current) { Log.i(TAG, "remote: $it") }
-            .apply { start() }
+        updateRemote()
         // サービスが止まっていた間の撮影を拾い直す。backlog キューに入るので新規撮影を待たせない
         ocr.reconcile()
         worker.execute {
@@ -145,6 +148,29 @@ class CaptureService : AccessibilityService() {
             }
         }
         Log.i(TAG, "connected. root=${root.absolutePath}")
+    }
+
+    /// 「パソコンから読む」の設定に合わせてサーバーを立てる・止める・合鍵を替えて張り直す
+    private fun updateRemote() {
+        val enabled = RemoteAccess.isEnabled(this)
+        val token = if (enabled) RemoteAccess.token(this) else null
+        if (token == remoteToken && (remote != null) == enabled) return
+
+        remote?.shutdown()
+        remote = null
+        remoteToken = null
+        if (token == null) {
+            Log.i(TAG, "remote: off")
+            return
+        }
+        remote = RemoteServer(
+            root = captureRoot(this),
+            port = REMOTE_PORT,
+            addressProvider = TailnetAddress::current,
+            token = token,
+            log = { Log.i(TAG, "remote: $it") },
+        ).apply { start() }
+        remoteToken = token
     }
 
     override fun onDestroy() {

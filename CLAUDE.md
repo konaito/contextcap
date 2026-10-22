@@ -155,12 +155,16 @@ companion object に集約。**テスト時はここを書き換えて再ビル�
 
 スマホのアプリ自身が読み取り専用の HTTP サーバー（`RemoteServer`、ポート 8642）を持つ。
 adb もワイヤレスデバッグも要らない。Mac とスマホの両方で Tailscale が繋がっていれば読める。
+**既定はオフ。** ホームの「パソコンから読む」をオンにした時だけ待ち受け、合鍵（`RemoteToken`）が要る。
 
 ```bash
-curl http://100.103.43.26:8642/                         # 日付ディレクトリ一覧
-curl http://100.103.43.26:8642/2026-10-21/              # ファイル名<TAB>バイト数
-curl -s http://100.103.43.26:8642/2026-10-21/ocr.jsonl | grep 検索語
-curl -o /tmp/x.jpg http://100.103.43.26:8642/2026-10-21/120000_000.jpg
+TOKEN=$(adb shell run-as app.imichat.contextcap cat shared_prefs/contextcap.xml \
+  | sed -n 's/.*name="RemoteToken">\([^<]*\)<.*/\1/p')   # debug ビルドのみ。画面の「URL をコピー」でも取れる
+H="Authorization: Bearer $TOKEN"
+curl -H "$H" http://100.103.43.26:8642/                         # 日付ディレクトリ一覧
+curl -H "$H" http://100.103.43.26:8642/2026-10-21/              # ファイル名<TAB>バイト数
+curl -sH "$H" http://100.103.43.26:8642/2026-10-21/ocr.jsonl | grep 検索語
+curl -H "$H" -o /tmp/x.jpg http://100.103.43.26:8642/2026-10-21/120000_000.jpg
 ```
 
 `100.103.43.26` はこの端末の Tailscale アドレス。tailnet から端末を外さない限り変わらない。
@@ -171,6 +175,8 @@ curl -o /tmp/x.jpg http://100.103.43.26:8642/2026-10-21/120000_000.jpg
 - 待ち受けは Tailscale のアドレスだけ（`TailnetAddress` が `fd7a:115c:a1e0::/48` を持つ
   インターフェースで判定する）。**0.0.0.0 で待ち受ける形に変えない。** Wi-Fi・モバイル回線側に口が開く
 - 書き込み・削除の口を足さない。読み取り専用であることが `INTERNET` を足した前提
+- **合鍵の確認と「同じ端末からの接続は 403」を外さない。** Tailscale のアドレスは端末自身の
+  アドレスなので、外すと INTERNET 権限を持つ他アプリから全履歴が読める（2026-10-22 に実機で確認）
 - 取ってきたデータは PII を含む。リポジトリに入れない
 
 ### ツールチェーンの制約（Android）

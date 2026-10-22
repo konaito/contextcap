@@ -22,6 +22,7 @@ import app.imichat.contextcap.CaptureService
 import app.imichat.contextcap.AppUsage
 import app.imichat.contextcap.AppUsageStats
 import app.imichat.contextcap.CaptureThumbnail
+import app.imichat.contextcap.RemoteAccess
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -97,6 +98,32 @@ class HomeState internal constructor() {
         reloadUsage()
     }
 
+    /// 「パソコンから読む」の切り替え。5 秒周期の `snapshot` を待たずに表示へ反映する
+    var remoteEnabled by mutableStateOf(false)
+        internal set
+    var remoteToken by mutableStateOf("")
+        internal set
+
+    fun toggleRemote(context: Context) {
+        val next = !remoteEnabled
+        RemoteAccess.setEnabled(context, next)
+        remoteEnabled = next
+        remoteToken = if (next) RemoteAccess.token(context) else ""
+        notifyService(context)
+    }
+
+    /// 合鍵を作り直す。古い URL はその場で使えなくなる
+    fun regenerateRemoteToken(context: Context) {
+        remoteToken = RemoteAccess.regenerateToken(context)
+        notifyService(context)
+    }
+
+    private fun notifyService(context: Context) {
+        context.sendBroadcast(
+            Intent(CaptureService.ACTION_SETTINGS_CHANGED).setPackage(context.packageName),
+        )
+    }
+
     fun togglePause(context: Context) {
         val next = !paused
         paused = next
@@ -117,7 +144,13 @@ class HomeState internal constructor() {
 fun rememberHomeState(): HomeState {
     val context = LocalContext.current
     val root = remember { CaptureService.captureRoot(context) }
-    val state = remember { HomeState().apply { paused = isPaused(context) } }
+    val state = remember {
+        HomeState().apply {
+            paused = isPaused(context)
+            remoteEnabled = RemoteAccess.isEnabled(context)
+            if (remoteEnabled) remoteToken = RemoteAccess.token(context)
+        }
+    }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
 
     // 進捗インジケータを動かすための時計
