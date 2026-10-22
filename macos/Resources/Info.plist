@@ -26,5 +26,7 @@
 	<true/>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSScreenCaptureUsageDescription</key>
+	<string>画面を 5 秒ごとに撮影してこの Mac に保存し、Apple Vision で文字を読み取ります。</string>
 </dict>
 </plist>

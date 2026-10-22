@@ -27,8 +27,25 @@ done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 rm -rf "$ICONSET"
 
-# ad-hoc 署名（identifier を固定して TCC 権限が剥がれにくいようにする）
-codesign --force --sign - --identifier app.imichat.contextcap "$APP"
+# 署名。キーチェーンに Developer ID Application の証明書があればそれで署名し、
+# 無ければ ad-hoc にする（SIGN_IDENTITY で明示もできる。"-" で ad-hoc を強制）。
+#
+# Developer ID だと designated requirement が「identifier + チーム ID」になるので、
+# 再ビルドしても画面収録・アクセシビリティの許可が外れない。
+# ad-hoc の designated requirement は cdhash そのもので、ビルドのたびに一致しなくなる
+# （identifier を固定しても効かない。TN3127）。
+# Hardened Runtime（--options runtime）と secure timestamp は公証の前提。例外の entitlement は要らない
+# （システムのフレームワークしかリンクしておらず、JIT もプラグインも無い）
+IDENTITY="${SIGN_IDENTITY:-$(security find-identity -v -p codesigning \
+  | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -1)}"
+if [ -n "$IDENTITY" ] && [ "$IDENTITY" != "-" ]; then
+  codesign --force --sign "$IDENTITY" --options runtime --timestamp \
+    --identifier app.imichat.contextcap "$APP"
+  echo "Signed: $IDENTITY"
+else
+  codesign --force --sign - --identifier app.imichat.contextcap "$APP"
+  echo "Signed: ad-hoc（再ビルドのたびに画面収録の許可を取り直すことになる）"
+fi
 
 echo "Built: $APP"
 

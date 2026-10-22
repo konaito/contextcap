@@ -26,7 +26,12 @@ open /Applications/ContextCap.app
 `swift test` は `error: no tests found; create a target in the 'Tests' directory` で落ちる。
 macOS 側のロジックを変えたら、対応する Android 側の unit test（下記）で契約を確認するか、実機で見る。
 
-再ビルドすると ad-hoc 署名が変わって画面収録権限が剥がれる。**ビルドのたびに再許可が要る。**
+`build-app.sh` はキーチェーンの Developer ID Application 証明書で署名する（Hardened Runtime・timestamp 付き）。
+designated requirement が identifier + チーム ID になるので、**再ビルドしても画面収録・アクセシビリティの許可は外れない。**
+証明書が無い Mac では ad-hoc になり、その場合はビルドのたびに再許可が要る（ad-hoc の要件は cdhash そのもの）。
+ad-hoc から切り替えた直後は古い許可が残って効かないので、
+`tccutil reset ScreenCapture app.imichat.contextcap`（`Accessibility` も）で消してから許可し直す。
+公証（notarize）はしていない。手元でビルドしたものは隔離属性が付かないので、そのまま起動できる
 
 パラメータのテスト用オーバーライド（macOS 版のみ。Android にはない）:
 
