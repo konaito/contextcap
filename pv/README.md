@@ -36,7 +36,4 @@ bun run film:render   # out/contextcap-film.mp4
 
 書き出した mp4 で測った値（2026-10-22）: 平均 -18.1 dB・最大 -1.5 dB。転換の直前の 0.5 秒は無音。
 
-## 比較用に残している `ContextCapPromo`（`src/` 直下）
-
-1 本目。黒地に文字が順にフェードインするだけの版で、「浅い・テンポが悪い」と却下された。
-比べるためだけに残している。音は `bun run audio`（`scripts/generate_audio.py`）。
+1 本目（黒地に文字がフェードインするだけの版）は却下したので消した。
