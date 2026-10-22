@@ -1,0 +1,4 @@
+node_modules/
+out/
+# scripts/generate_film_audio.py が作る（乱数の種を固定してあるので、同じものが出る）
+public/**/*.wav

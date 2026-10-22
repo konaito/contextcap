@@ -1,0 +1,46 @@
+{
+  "_comment": "v3 の尺の正本。120BPM・1 拍 15 フレーム・1 小節 60 フレーム。映像（timeline.ts）と音（scripts/generate_film_audio.py）の両方がここを読む",
+  "fps": 30,
+  "bpm": 120,
+  "beat": 15,
+  "acts": {
+    "pain": {
+      "from": 0,
+      "to": 240
+    },
+    "turn": {
+      "from": 240,
+      "to": 300
+    },
+    "capture": {
+      "from": 300,
+      "to": 540
+    },
+    "text": {
+      "from": 540,
+      "to": 720
+    },
+    "short": {
+      "from": 720,
+      "to": 930
+    },
+    "long": {
+      "from": 930,
+      "to": 1410
+    },
+    "close": {
+      "from": 1410,
+      "to": 1650
+    }
+  },
+  "silence": {
+    "from": 222,
+    "to": 240
+  },
+  "hits": [
+    240,
+    930,
+    1470
+  ],
+  "drop": 1470
+}
