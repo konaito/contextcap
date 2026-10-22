@@ -1,0 +1,11 @@
+{
+  "name": "contextcap-lp",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "void deploy --platform cloudflare"
+  },
+  "devDependencies": {
+    "void": "1.2.1"
+  }
+}
