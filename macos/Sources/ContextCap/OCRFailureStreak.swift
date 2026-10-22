@@ -17,15 +17,20 @@ struct OCRFailureStreak {
         self.threshold = threshold
     }
 
-    /// 結果を 1 件入れる。続けての失敗がしきい値に**ちょうど達した 1 回だけ** true を返す。
-    /// 成功が 1 件でも入れば数え直す
+    /// 結果を 1 件入れる。続けての失敗がしきい値の倍数に達するたびに true を返す
+    /// （10 なら 10・20・30 回目）。成功が 1 件でも入れば数え直す。
+    ///
+    /// **しきい値に達した 1 回だけにしない。** 2026-10-23、23:54 に自己再起動した 18 分後に
+    /// また壊れ、そのときは前回から 1 時間経っていないので再起動を見送った。知らせが 1 回きりだと、
+    /// 1 時間の待ちが明けても二度と知らせが来ず、手で起動し直すまで 2 時間 OCR が止まった（#18）。
+    /// 再起動の回数の制限は `OCRRelaunchPolicy` にだけ持たせる
     mutating func record(failed: Bool) -> Bool {
         guard failed else {
             count = 0
             return false
         }
         count += 1
-        return count == threshold
+        return count % threshold == 0
     }
 }
 
