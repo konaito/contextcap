@@ -138,6 +138,26 @@ macOS は `.icns` をビルドのたびに作り、Android は
 
 実装・検証の作法は [`CLAUDE.md`](./CLAUDE.md)。
 
+## エージェントから読む（macOS）
+
+`scripts/contextcap-mcp.py` は `ocr.sqlite` を読むだけの MCP サーバー（stdio）。
+エージェントが SQL を書かずに、語での検索・期間の一覧・記録の状態を引ける。書き込みの口は無い。
+
+```bash
+claude mcp add contextcap -- /path/to/contextcap/scripts/contextcap-mcp.py
+```
+
+| ツール | 返すもの |
+|---|---|
+| `contextcap_search` | 語を含む行を 10 分ごとの窓にまとめ、当たった語の多い窓・新しい窓から。窓ごとに当たった行だけ |
+| `contextcap_timeline` | 期間内の文字を 10 分ごとに。窓の中で同じ行は 1 回だけ |
+| `contextcap_status` | 記録の範囲、最新の OCR 済みフレームの時刻、直近 1 時間の件数 |
+
+`"..."` で囲んだ句が 1 件も当たらなければ、前半と後半に割って引き直す（OCR の 1 文字誤読を拾う）。
+ベクトル検索は入れていない。比べた結果と理由は
+[`docs/results/2026-10-23-search-eval.md`](./docs/results/2026-10-23-search-eval.md)。
+Android の文字は対象外で、端末の `RemoteServer` から読む。
+
 ## 設計文書
 
 - [`docs/android-design.md`](./docs/android-design.md) — Android 版の設計と、
