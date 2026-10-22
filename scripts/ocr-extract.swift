@@ -1,6 +1,7 @@
-// ContextCap の撮影画像から Apple Vision で全文 OCR を抽出し、SQLite(FTS5) に貯める。
+// ContextCap の撮影画像から Apple Vision で全文 OCR を抽出し、アプリと同じ ocr.sqlite に貯める。
 //
-//   swiftc -O -o /tmp/ocr-extract scripts/ocr-extract.swift
+//   swiftc -O -parse-as-library -o /tmp/ocr-extract \
+//     scripts/ocr-extract.swift macos/Sources/ContextCap/OCRStore.swift
 //   /tmp/ocr-extract --root ~/ContextCap --db ~/ContextCap-analysis/ocr.sqlite
 //
 // 設計上の要点:
@@ -15,10 +16,7 @@ import AppKit
 import CoreGraphics
 import Foundation
 import ImageIO
-import SQLite3
 import Vision
-
-let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
 // MARK: - 引数
 
@@ -284,134 +282,46 @@ func recognize(_ shot: Shot) -> OCRResult {
 
 // MARK: - SQLite
 
+/// 書き込みはアプリと同じ `OCRStore` に任せる（`macos/Sources/ContextCap/OCRStore.swift` を
+/// 一緒にコンパイルする）。辞書・本文・範囲の書き方を 2 か所に持つと、片方だけ直して壊れる
 final class Store {
     /// 書き込みに失敗した件数。並列実行では欠落に直結するので必ず報告する
     private(set) var writeFailures = 0
-    private var db: OpaquePointer?
-    private var insertShot: OpaquePointer?
-    private var insertFTS: OpaquePointer?
+    private let store: OCRStore
 
     init(path: URL) throws {
-        try FileManager.default.createDirectory(
-            at: path.deletingLastPathComponent(), withIntermediateDirectories: true
-        )
-        guard sqlite3_open(path.path, &db) == SQLITE_OK else {
-            throw NSError(domain: "ocr", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "open failed: \(path.path)"])
+        guard let store = OCRStore(url: path) else {
+            throw NSError(domain: "ocr", code: 1, userInfo: [NSLocalizedDescriptionKey:
+                "開けない、または旧形式（先に scripts/ocr-compact.py で移行する）: \(path.path)"])
         }
-        exec("PRAGMA journal_mode=WAL;")
-        exec("PRAGMA synchronous=NORMAL;")
-        // 複数プロセスで同じ DB に書くため必須。WAL でも writer は同時に 1 つなので、
-        // これが無いと 2 本目以降の INSERT が SQLITE_BUSY で落ちる（黙ってデータが欠ける）。
-        // 1 回の書き込みは数 KB・1 プロセスあたり 1 秒に 1 回程度なので、待たせれば足りる
-        exec("PRAGMA busy_timeout=60000;")
-        exec("""
-        CREATE TABLE IF NOT EXISTS shots (
-          day TEXT NOT NULL, base TEXT NOT NULL, gen INTEGER NOT NULL,
-          ts REAL NOT NULL, path TEXT NOT NULL,
-          width INTEGER, height INTEGER, bytes INTEGER,
-          dark_fraction REAL, mean_lum REAL,
-          text TEXT, lines INTEGER, conf REAL, ocr_ms INTEGER,
-          status TEXT NOT NULL, err TEXT,
-          PRIMARY KEY (day, base)
-        );
-        """)
-        exec("CREATE INDEX IF NOT EXISTS shots_ts ON shots(ts);")
-        exec("CREATE INDEX IF NOT EXISTS shots_status ON shots(status);")
-        // 日本語を substring で引くため trigram。unicode61 は CJK を分割しない
-        exec("""
-        CREATE VIRTUAL TABLE IF NOT EXISTS shots_fts
-        USING fts5(text, day UNINDEXED, base UNINDEXED, tokenize='trigram');
-        """)
-
-        guard sqlite3_prepare_v2(db, """
-        INSERT OR REPLACE INTO shots
-          (day, base, gen, ts, path, width, height, bytes, dark_fraction, mean_lum,
-           text, lines, conf, ocr_ms, status, err)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
-        """, -1, &insertShot, nil) == SQLITE_OK,
-              sqlite3_prepare_v2(db,
-                                 "INSERT INTO shots_fts (text, day, base) VALUES (?,?,?);",
-                                 -1, &insertFTS, nil) == SQLITE_OK else {
-            throw NSError(domain: "ocr", code: 2,
-                          userInfo: [NSLocalizedDescriptionKey: String(cString: sqlite3_errmsg(db))])
-        }
-    }
-
-    private func exec(_ sql: String) {
-        var err: UnsafeMutablePointer<CChar>?
-        if sqlite3_exec(db, sql, nil, nil, &err) != SQLITE_OK, let err {
-            FileHandle.standardError.write("sqlite: \(String(cString: err))\n".data(using: .utf8)!)
-            sqlite3_free(err)
-        }
+        self.store = store
     }
 
     func existingKeys() -> Set<String> {
-        var set = Set<String>()
-        var stmt: OpaquePointer?
-        guard sqlite3_prepare_v2(db, "SELECT day, base FROM shots;", -1, &stmt, nil) == SQLITE_OK
-        else { return set }
-        defer { sqlite3_finalize(stmt) }
-        while sqlite3_step(stmt) == SQLITE_ROW {
-            let d = String(cString: sqlite3_column_text(stmt, 0))
-            let b = String(cString: sqlite3_column_text(stmt, 1))
-            set.insert("\(d)/\(b)")
-        }
-        return set
+        store.existingKeys()
     }
 
-    /// 溜めた行をひとつのトランザクションで書き切る。
+    /// 溜めた行を書く。1 枚ごとに `OCRStore` がトランザクションを切る。
     ///
     /// **OCR しながらトランザクションを開けたままにしない。** SQLite は WAL でも
     /// writer が同時に 1 つしか居られず、最初の INSERT から COMMIT までロックを保持する。
     /// 50 件たまるまで開けっぱなしにすると 1 プロセスが 40 秒ロックを握り、
     /// 4 本並列でも 3 本が常に待つ（実測: 本来 4.74 枚/秒 のところ 1.67 枚/秒 まで落ちた）。
     func flush(_ batch: [(Shot, OCRResult)]) {
-        guard !batch.isEmpty else { return }
-        exec("BEGIN IMMEDIATE;")
-        for (s, r) in batch { write(s, r) }
-        exec("COMMIT;")
-    }
-
-    private func write(_ s: Shot, _ r: OCRResult) {
-        guard let st = insertShot else { return }
-        sqlite3_reset(st)
-        sqlite3_bind_text(st, 1, s.day, -1, SQLITE_TRANSIENT)
-        sqlite3_bind_text(st, 2, s.base, -1, SQLITE_TRANSIENT)
-        sqlite3_bind_int(st, 3, Int32(s.gen))
-        sqlite3_bind_double(st, 4, s.ts)
-        sqlite3_bind_text(st, 5, s.url.path, -1, SQLITE_TRANSIENT)
-        sqlite3_bind_int(st, 6, Int32(r.width))
-        sqlite3_bind_int(st, 7, Int32(r.height))
-        sqlite3_bind_int64(st, 8, s.bytes)
-        sqlite3_bind_double(st, 9, r.darkFraction)
-        sqlite3_bind_double(st, 10, r.meanLum)
-        sqlite3_bind_text(st, 11, r.text, -1, SQLITE_TRANSIENT)
-        sqlite3_bind_int(st, 12, Int32(r.lines))
-        sqlite3_bind_double(st, 13, r.conf)
-        sqlite3_bind_int(st, 14, Int32(r.ms))
-        sqlite3_bind_text(st, 15, r.status, -1, SQLITE_TRANSIENT)
-        if let e = r.err { sqlite3_bind_text(st, 16, e, -1, SQLITE_TRANSIENT) } else { sqlite3_bind_null(st, 16) }
-        if sqlite3_step(st) != SQLITE_DONE {
+        for (s, r) in batch {
+            let row = OCRRow(
+                day: s.day, base: s.base, gen: s.gen, ts: s.ts, path: s.url.path,
+                width: r.width, height: r.height, bytes: Int(s.bytes),
+                text: r.text, lines: r.lines, conf: r.conf, ocrMS: r.ms,
+                status: r.status, err: r.err, darkFraction: r.darkFraction, meanLum: r.meanLum
+            )
             // 並列実行では書き込み失敗＝そのフレームが静かに欠ける。件数を持ち回って
             // 最後に必ず報告する（0 でないなら、その分は再実行で拾い直す必要がある）
-            writeFailures += 1
-            FileHandle.standardError.write("insert failed: \(String(cString: sqlite3_errmsg(db)))\n"
-                .data(using: .utf8)!)
+            if !store.insert(row) {
+                writeFailures += 1
+                FileHandle.standardError.write("insert failed: \(s.day)/\(s.base)\n".data(using: .utf8)!)
+            }
         }
-
-        guard !r.text.isEmpty, let ft = insertFTS else { return }
-        sqlite3_reset(ft)
-        sqlite3_bind_text(ft, 1, r.text, -1, SQLITE_TRANSIENT)
-        sqlite3_bind_text(ft, 2, s.day, -1, SQLITE_TRANSIENT)
-        sqlite3_bind_text(ft, 3, s.base, -1, SQLITE_TRANSIENT)
-        _ = sqlite3_step(ft)
-    }
-
-    deinit {
-        sqlite3_finalize(insertShot)
-        sqlite3_finalize(insertFTS)
-        sqlite3_close(db)
     }
 }
 
@@ -424,97 +334,102 @@ func log(_ s: String) {
     fflush(stdout)
 }
 
-let store: Store
-do {
-    store = try Store(path: opts.db)
-} catch {
-    FileHandle.standardError.write("db error: \(error.localizedDescription)\n".data(using: .utf8)!)
-    exit(1)
-}
+@main
+struct OCRExtract {
+    static func main() {
+        let store: Store
+        do {
+            store = try Store(path: opts.db)
+        } catch {
+            FileHandle.standardError.write("db error: \(error.localizedDescription)\n".data(using: .utf8)!)
+            exit(1)
+        }
 
-let done = store.existingKeys()
-var todo = enumerateShots(opts).filter { !done.contains("\($0.day)/\($0.base)") }
-let totalFound = todo.count + done.count
+        let done = store.existingKeys()
+        var todo = enumerateShots(opts).filter { !done.contains("\($0.day)/\($0.base)") }
+        let totalFound = todo.count + done.count
 
-// シャード分割は「残り枚数」を確定させてから行う。日の総枚数で割ると偏る
-if opts.shardCount > 1 {
-    var remaining: [String: Int] = [:]
-    for s in todo { remaining[s.day, default: 0] += 1 }
-    let mine = assignDays(remaining: remaining, index: opts.shardIndex, count: opts.shardCount)
-    todo = todo.filter { mine.contains($0.day) }
-}
+        // シャード分割は「残り枚数」を確定させてから行う。日の総枚数で割ると偏る
+        if opts.shardCount > 1 {
+            var remaining: [String: Int] = [:]
+            for s in todo { remaining[s.day, default: 0] += 1 }
+            let mine = assignDays(remaining: remaining, index: opts.shardIndex, count: opts.shardCount)
+            todo = todo.filter { mine.contains($0.day) }
+        }
 
-if let n = opts.limit { todo = Array(todo.prefix(n)) }
+        if let n = opts.limit { todo = Array(todo.prefix(n)) }
 
-log("root=\(opts.root.path) db=\(opts.db.path)")
-let shardLabel = opts.shardCount > 1 ? " / shard \(opts.shardIndex)/\(opts.shardCount)" : ""
-log("対象 \(totalFound) 枚 / 済 \(done.count) 枚 / 今回 \(todo.count) 枚 / jobs=\(opts.jobs)\(shardLabel)")
+        log("root=\(opts.root.path) db=\(opts.db.path)")
+        let shardLabel = opts.shardCount > 1 ? " / shard \(opts.shardIndex)/\(opts.shardCount)" : ""
+        log("対象 \(totalFound) 枚 / 済 \(done.count) 枚 / 今回 \(todo.count) 枚 / jobs=\(opts.jobs)\(shardLabel)")
 
-if opts.planOnly {
-    let byDay = Dictionary(grouping: todo, by: { $0.day })
-        .map { (day: $0.key, n: $0.value.count) }
-        .sorted { $0.day < $1.day }
-    log("担当: " + byDay.map { "\($0.day)=\($0.n)" }.joined(separator: " "))
-    log("PLAN 合計 \(todo.count)")
-    exit(0)
-}
+        if opts.planOnly {
+            let byDay = Dictionary(grouping: todo, by: { $0.day })
+                .map { (day: $0.key, n: $0.value.count) }
+                .sorted { $0.day < $1.day }
+            log("担当: " + byDay.map { "\($0.day)=\($0.n)" }.joined(separator: " "))
+            log("PLAN 合計 \(todo.count)")
+            exit(0)
+        }
 
-if todo.isEmpty { log("処理対象なし"); exit(0) }
+        if todo.isEmpty { log("処理対象なし"); exit(0) }
 
-let writeQ = DispatchQueue(label: "ocr.write")
-let sem = DispatchSemaphore(value: opts.jobs)
-let group = DispatchGroup()
-var processed = 0
-var statusCounts: [String: Int] = [:]
-var msSum = 0
-let start = Date()
-/// 書き込み待ちの行。トランザクションを開けたまま OCR しないための緩衝
-var batch: [(Shot, OCRResult)] = []
+        let writeQ = DispatchQueue(label: "ocr.write")
+        let sem = DispatchSemaphore(value: opts.jobs)
+        let group = DispatchGroup()
+        var processed = 0
+        var statusCounts: [String: Int] = [:]
+        var msSum = 0
+        let start = Date()
+        /// 書き込み待ちの行。トランザクションを開けたまま OCR しないための緩衝
+        var batch: [(Shot, OCRResult)] = []
 
-for shot in todo {
-    sem.wait()
-    group.enter()
-    DispatchQueue.global(qos: opts.background ? .utility : .userInitiated).async {
-        let r = recognize(shot)
-        writeQ.async {
-            batch.append((shot, r))
-            processed += 1
-            statusCounts[r.status, default: 0] += 1
-            msSum += r.ms
-            // 途中で落ちた時に失う量を抑えるため細かく刻む。
-            // 50 件の書き込み自体は数十ミリ秒で終わり、その間だけロックを握る
-            if batch.count >= 50 {
-                store.flush(batch)
-                batch.removeAll(keepingCapacity: true)
+        for shot in todo {
+            sem.wait()
+            group.enter()
+            DispatchQueue.global(qos: opts.background ? .utility : .userInitiated).async {
+                let r = recognize(shot)
+                writeQ.async {
+                    batch.append((shot, r))
+                    processed += 1
+                    statusCounts[r.status, default: 0] += 1
+                    msSum += r.ms
+                    // 途中で落ちた時に失う量を抑えるため細かく刻む。
+                    // 50 件の書き込み自体は数十ミリ秒で終わり、その間だけロックを握る
+                    if batch.count >= 50 {
+                        store.flush(batch)
+                        batch.removeAll(keepingCapacity: true)
+                    }
+                    if processed % opts.progressEvery == 0 {
+                        let el = Date().timeIntervalSince(start)
+                        let rate = Double(processed) / el
+                        let remain = Double(todo.count - processed) / max(rate, 0.001)
+                        log(String(format: "%d/%d  %.1f 枚/秒  平均 %dms/枚  残り %.0f 分  %@",
+                                   processed, todo.count, rate, msSum / max(processed, 1),
+                                   remain / 60,
+                                   statusCounts.sorted { $0.key < $1.key }
+                                       .map { "\($0.key)=\($0.value)" }.joined(separator: " ")))
+                    }
+                    sem.signal()
+                    group.leave()
+                }
             }
-            if processed % opts.progressEvery == 0 {
-                let el = Date().timeIntervalSince(start)
-                let rate = Double(processed) / el
-                let remain = Double(todo.count - processed) / max(rate, 0.001)
-                log(String(format: "%d/%d  %.1f 枚/秒  平均 %dms/枚  残り %.0f 分  %@",
-                           processed, todo.count, rate, msSum / max(processed, 1),
-                           remain / 60,
-                           statusCounts.sorted { $0.key < $1.key }
-                               .map { "\($0.key)=\($0.value)" }.joined(separator: " ")))
-            }
-            sem.signal()
-            group.leave()
+        }
+
+        group.wait()
+        writeQ.sync {
+            store.flush(batch)
+            batch.removeAll()
+        }
+
+        let el = Date().timeIntervalSince(start)
+        log(String(format: "完了 %d 枚 / %.1f 分 / %.1f 枚/秒 / 平均 %dms",
+                   processed, el / 60, Double(processed) / el, msSum / max(processed, 1)))
+        log("status: " + statusCounts.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }
+            .joined(separator: " "))
+        if store.writeFailures > 0 {
+            log("⚠️ 書き込み失敗 \(store.writeFailures) 件。その分は DB に入っていないので再実行すること")
+            exit(1)
         }
     }
-}
-
-group.wait()
-writeQ.sync {
-    store.flush(batch)
-    batch.removeAll()
-}
-
-let el = Date().timeIntervalSince(start)
-log(String(format: "完了 %d 枚 / %.1f 分 / %.1f 枚/秒 / 平均 %dms",
-           processed, el / 60, Double(processed) / el, msSum / max(processed, 1)))
-log("status: " + statusCounts.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }
-    .joined(separator: " "))
-if store.writeFailures > 0 {
-    log("⚠️ 書き込み失敗 \(store.writeFailures) 件。その分は DB に入っていないので再実行すること")
-    exit(1)
 }

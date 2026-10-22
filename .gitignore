@@ -14,3 +14,4 @@ macos/build/
 
 # Claude Code のワークツリー（リポジトリ丸ごとのコピーが入る）
 .claude/
+__pycache__/

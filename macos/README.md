@@ -88,7 +88,7 @@
 ## OCR（撮影直後）
 
 `OCRIndexer` が Apple Vision で全文 OCR し、`~/ContextCap-analysis/ocr.sqlite` に貯める
-（`scripts/ocr-extract.swift` と同じファイル・同じスキーマ・同じ主キー）。
+（`scripts/ocr-extract.swift` も `OCRStore.swift` を一緒にコンパイルして、同じファイルに同じ形で書く）。
 
 - **撮影 tick を待たせない。**撮影は「保存して enqueue」で終わり。OCR は専用のシリアルキュー
   が後ろで消化する。重いフレームは実測 1,043ms あり、5,000ms の tick 予算に載せると
@@ -104,6 +104,40 @@
   認識行数はむしろ off のほうが多い（5781 → 5817）
 
 速度は問題にならない。撮影 0.2 枚/秒 に対して OCR は単プロセス 1.72 枚/秒 で、**8.6 倍の余裕**がある。
+
+### 文字は 1 行ずつの辞書で持つ
+
+5 秒おきに同じ画面を読むので、同じ行が何千回も出る。2026-10-23 の 486,622 枚では、
+本文 1.54GB のうち種類の違う行は 2,725,936 種類・118MB（7.7%）しかなかった。
+そこで `ocr.sqlite` は行の辞書で持つ（schema 2、`OCRStore`）。
+
+| テーブル | 中身 |
+|---|---|
+| `lines` | 行の辞書。検索索引 `lines_fts`（FTS5 trigram）はここにだけ張る |
+| `texts` | 1 枚分の本文。行番号の並びを JSON 配列で持つ。同じ本文は 1 つにまとめる |
+| `line_runs` | 行 → その行を含む本文の範囲。本文には撮影順に連番を振るので、続けて撮った画面に同じ行が出る間は 1 行で済む |
+| `frames` | 1 枚ごとのメタデータと `text_id` |
+| `shots`（ビュー） | 旧形式と同じ列を返す。`select text from shots` はそのまま通る |
+
+- **検索の結果は旧形式と同じ。** 改行を含まない語は 1 行の中でしか当たらないので、行ごとに索引を張っても
+  取りこぼしは出ない。移行のときに全行の本文と列、9 語の検索結果、索引の整合性を突き合わせている
+- 2026-10-23 の移行で 6.86GB → 1.00GB（14.5%）。いちばん大きかったのは本文ではなく trigram 索引
+  （本文 1.54GB に対して 3.27GB）で、辞書の 118MB にだけ張れば 237MB で済む。
+  移行後の内訳は `texts` 281MB・`lines_fts` 237MB・`lines` 171MB・`line_runs` 131MB・`frames` 63MB
+- 検索は速くなった（「ContextCap」0.83 → 0.13 秒、2 文字の「会議」3.71 → 0.54 秒、日の一覧 0.14 秒）
+- ここより先に縮めるには、行番号の並びを JSON ではなくバイナリにすることになる。そうすると
+  `sqlite3` コマンドから読めなくなる（`contextcap` スキルは素の SQL で読む）ので、そこで止めた
+- 1 枚の書き込み（辞書・本文・範囲・frames）は 1 トランザクション。本文の連番が `line_runs` の前提なので、
+  `ocr-extract` と同時に書いてもずれない
+- **アプリは旧形式の DB には書かない。** 撮影は続き、Retention は未 OCR の画像を消さないので、
+  `scripts/ocr-compact.py` で移行したあとに backlog として読む
+
+```bash
+pkill -x ContextCap
+./scripts/ocr-compact.py          # ocr.sqlite.new を作って全件で検算する
+./scripts/ocr-compact.py --swap   # 検算が通ったら差し替える（旧は ocr.sqlite.bak-<日時> に退避）
+open /Applications/ContextCap.app
+```
 
 ### スリープ復帰後に Vision が壊れる
 
@@ -180,6 +214,7 @@ macos/
 │   ├── AppDelegate.swift       # StatusItem・メニュー構築
 │   ├── CaptureManager.swift    # 5秒タイマー + ScreenCaptureKit 撮影 + 等倍JPEG保存
 │   ├── OCRIndexer.swift        # 撮影直後の Vision OCR（fresh/backlog 2段シリアルキュー）
+│   ├── OCRStore.swift          # ocr.sqlite への書き込み（行の辞書・本文・範囲・frames）
 │   ├── Retention.swift         # 3日保持 + 40GB 上限の削除（StorageBudget）
 │   ├── CaptureFile.swift       # 命名規約とパスからの撮影時刻解釈
 │   ├── StatsStore.swift        # 枚数・期間・容量の集計（フルスキャン + 増分）

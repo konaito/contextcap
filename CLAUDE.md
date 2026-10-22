@@ -107,6 +107,13 @@ ScreenCaptureKit 撮影 + 等倍 JPEG 保存 + OCR キューへの enqueue）。
 「撮った瞬間に OCR」が成立しない。**並列にしない** — Vision は内部でシリアライズしていてスレッドを
 2/4/8/12/20 と増やしても 1.55〜1.57 枚/秒で変わらず、同時に 1 枚しか持たないほうがメモリも軽い。
 DB は `scripts/ocr-extract.swift` と同じ `~/ContextCap-analysis/ocr.sqlite`・同じスキーマ・同じ主キー。
+**文字は 1 行ずつの辞書で持つ（schema 2、`OCRStore`）。** `lines`（行の辞書・ここにだけ FTS5 trigram）、
+`texts`（行番号の並び）、`line_runs`（行 → それを含む本文の範囲）、`frames`（1 枚ごと）。
+`shots` は旧形式と同じ列を返す**ビュー**で、`select text from shots` はそのまま通る。書き込みは `frames` へ。
+2026-10-23 に 6.85GB → 約 1GB。検索結果は旧形式と同じ（改行を含まない語は 1 行の中でしか当たらない）。
+- `ocr-extract.swift` は `OCRStore.swift` と一緒にコンパイルする。書き込み処理を複製しない
+- **アプリは旧形式（`user_version` 0 で `shots` テーブルがある）には書かない。** 移行は `scripts/ocr-compact.py`
+- 本文の連番が `line_runs` の前提。1 枚の書き込み（辞書・本文・範囲・frames）は 1 トランザクションで行う
 
 **スリープ復帰後に Vision がプロセス内で壊れ、再起動まで全件 failed になることがある**（4 日で 16,698 件）。
 撮影直後の OCR が 10 回続けて失敗したらアプリが自分で起動し直し（1 時間に 1 回まで）、
