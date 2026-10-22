@@ -56,8 +56,9 @@ final class OCRIndexer: @unchecked Sendable {
     /// 再起動を繰り返さないように）。`queue` の上でだけ触る
     private var freshFailures = OCRFailureStreak(threshold: OCRIndexer.stuckThreshold)
 
-    /// 撮影直後の OCR が `stuckThreshold` 回続けて失敗した時に、`queue` の上から 1 回呼ばれる。
-    /// Vision がプロセス内で壊れた状態に入ったとみなし、AppDelegate がアプリを再起動する
+    /// 撮影直後の OCR が `stuckThreshold` 回続けて失敗するたびに、`queue` の上から呼ばれる
+    /// （失敗が続く限り約 50 秒ごと）。Vision がプロセス内で壊れた状態に入ったとみなし、
+    /// AppDelegate がアプリを再起動する。1 時間に 1 回の制限は AppDelegate 側で掛ける
     var onStuck: (@Sendable () -> Void)?
 
     /// 5 秒に 1 枚なので、約 50 秒続けて失敗したら再起動する
