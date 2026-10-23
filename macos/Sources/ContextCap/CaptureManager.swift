@@ -139,7 +139,7 @@ final class CaptureManager {
 
     /// 情報のない画面（DRM 保護・消灯直前）は**ファイルを作らずに捨てる**。
     /// 捨てた場合は nil を返す。
-    /// 判定は必ず書き込みの前に置く（後段で落とすと MiaChat #1523 と同じ構図になる）。
+    /// 判定は必ず書き込みの前に置く（後段で落とすと、黒画面を誤読して閉ループを作る構図になる）。
     private func save(image: CGImage, at date: Date) throws -> (url: URL, bytes: Int64)? {
         let rep = NSBitmapImageRep(cgImage: image)
         guard let data = rep.representation(
