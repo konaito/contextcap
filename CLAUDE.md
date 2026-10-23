@@ -4,8 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## このリポジトリの位置づけ
 
-`imi-chat/contextcap` は **MiaChat 本体（`imi-chat/imi-chat`）とは別の独立リポジトリ**。
-親ディレクトリ経由で `imi-chat` の `AGENTS.md` / `CLAUDE.md` が読み込まれることがあるが、
+このリポジトリは単独の独立リポジトリ。
+親ディレクトリ経由で他のプロジェクトの `AGENTS.md` / `CLAUDE.md` が読み込まれることがあるが、
 **あちらの規約（`develop` 向け PR、issue assign 排他ロック、`pr-size-check`、Vercel / Prisma / Supabase の手順）はここには一切適用されない。**
 
 ここは `main` 単独。CI もリリースワークフローもない。検証はローカルで完結させる。
@@ -160,7 +160,7 @@ companion object に集約。**テスト時はここを書き換えて再ビル�
 判定は `FrameBlackness`（純ロジック・unit test 済み）で、格子に割って「セルごと真っ黒」を数える。
 **黒いピクセルの割合で判定しない**（ダークモード画面が同じ形になる）。閾値 85% なのは、
 保護画面でもステータスバーとナビゲーションバーが写るから。**判定は必ず保存の前**に置く
-（後段で落とすと MiaChat 本体 #1523 と同じ構図になる）。
+（後段で落とすと、黒画面を解析側が誤読して閉ループを作る構図になる）。
 
 踏み抜きやすい罠（詳細と実測値は `android/README.md`）:
 
@@ -242,4 +242,4 @@ cd macos && SKIP_INSTALL=1 ./scripts/build-app.sh   # → .app 内に AppIcon.ic
   `/snapshot/` `/snapshots/`）
 - **黒画像を無視しない。** DRM / `FLAG_SECURE` の領域は黒塗りで撮影される。撮影は止まらない。
   Android 版は全面が黒いフレームだけ保存せずに捨てるが、**部分的に黒い画面と macOS 版は残る**。
-  解析に回すときは除外する（MiaChat 本体 #1523 と同型の罠）
+  解析に回すときは除外する（黒画面を誤読して閉ループを作る罠）
