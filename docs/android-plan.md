@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Android 端末の画面を 10 秒に 1 回撮ってローカルに溜め続けるだけの常駐アプリを作り、MiaChat の正解データをスマホ利用文脈からも収集できるようにする。
+**Goal:** Android 端末の画面を 10 秒に 1 回撮ってローカルに溜め続けるだけの常駐アプリを作り、解析の正解データをスマホ利用文脈からも収集できるようにする。
 
 **Architecture:** `AccessibilityService.takeScreenshot()` を単一の常駐点として使う。AccessibilityService は system_server にバインドされた OS 管理プロセスなので、ForegroundService も常時通知もバッテリー最適化の除外も持たない。撮影・保存・容量管理はすべてこのサービス内で完結し、UI は状態表示用の Activity 1 枚だけ。
 
