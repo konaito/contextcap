@@ -329,7 +329,7 @@ class CaptureService : AccessibilityService() {
         // 0 バイトの JPEG を書かない。画面ロック・スリープ中に compress が中身の無い
         // 結果を返すことがある（このエミュレータでも 2026-08-16 01:04 に 4 枚出た）。
         // 書いてしまうと後段が「読めなかった」のか「観測できなかった」のか区別できず、
-        // MiaChat 本体では text-only 再試行に落ちて幻覚 annotation を 247 件作った。
+        // 過去の事例では text-only 再試行に落ちて幻覚 annotation を 247 件作った。
         // 撮れなかったことは gaps.jsonl 側に残るので、ここは黙って捨ててよい
         if (jpeg.isEmpty()) return null
 
