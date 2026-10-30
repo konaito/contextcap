@@ -111,7 +111,11 @@ DB は `scripts/ocr-extract.swift` と同じ `~/ContextCap-analysis/ocr.sqlite`�
 `texts`（行番号の並び）、`line_runs`（行 → それを含む本文の範囲）、`frames`（1 枚ごと）。
 `shots` は旧形式と同じ列を返す**ビュー**で、`select text from shots` はそのまま通る。書き込みは `frames` へ。
 2026-10-23 に 6.85GB → 約 1GB。検索結果は旧形式と同じ（改行を含まない語は 1 行の中でしか当たらない）。
-- `ocr-extract.swift` は `OCRStore.swift` と一緒にコンパイルする。書き込み処理を複製しない
+- `ocr-extract.swift` は `OCRStore.swift` と `OCRLayout.swift` と一緒にコンパイルする。書き込み処理と並べ方を複製しない
+- **行の並べ方は `OCRLayout.layoutText`。** 画面の境目で行を割り、領域ごとに並べ、領域の間に空行を入れる。
+  imichat2b#316 からの写しで、閾値は原本のまま動かさない。原本との違いは `separates(left:right:)` の 1 か所だけ。
+  `split` 側の条件を緩めると単語の途中で割れる（432 枚で 4 行）。変えたら `scripts/ocr-layout-eval.swift` で
+  変更前後を比べ、割れた行を画像で全部見る
 - **アプリは旧形式（`user_version` 0 で `shots` テーブルがある）には書かない。** 移行は `scripts/ocr-compact.py`
 - 本文の連番が `line_runs` の前提。1 枚の書き込み（辞書・本文・範囲・frames）は 1 トランザクションで行う
 

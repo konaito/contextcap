@@ -18,3 +18,7 @@ swiftc -O -parse-as-library "$SRC/OCRFailureStreak.swift" scripts/ocr-streak-tes
 BIN3=$(mktemp -d)/ocr-store-test
 swiftc -O -parse-as-library "$SRC/OCRStore.swift" scripts/ocr-store-test.swift -o "$BIN3"
 "$BIN3"
+
+BIN4=$(mktemp -d)/ocr-layout-test
+swiftc -O -parse-as-library "$SRC/OCRLayout.swift" scripts/ocr-layout-test.swift -o "$BIN4"
+"$BIN4"
