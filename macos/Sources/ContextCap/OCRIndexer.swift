@@ -1,10 +1,7 @@
 import CoreGraphics
 import Foundation
 import ImageIO
-import SQLite3
 import Vision
-
-private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
 /// 撮影した画像を、劣化する前に OCR してテキストを確定させる。
 ///
@@ -59,8 +56,9 @@ final class OCRIndexer: @unchecked Sendable {
     /// 再起動を繰り返さないように）。`queue` の上でだけ触る
     private var freshFailures = OCRFailureStreak(threshold: OCRIndexer.stuckThreshold)
 
-    /// 撮影直後の OCR が `stuckThreshold` 回続けて失敗した時に、`queue` の上から 1 回呼ばれる。
-    /// Vision がプロセス内で壊れた状態に入ったとみなし、AppDelegate がアプリを再起動する
+    /// 撮影直後の OCR が `stuckThreshold` 回続けて失敗するたびに、`queue` の上から呼ばれる
+    /// （失敗が続く限り約 50 秒ごと）。Vision がプロセス内で壊れた状態に入ったとみなし、
+    /// AppDelegate がアプリを再起動する。1 時間に 1 回の制限は AppDelegate 側で掛ける
     var onStuck: (@Sendable () -> Void)?
 
     /// 5 秒に 1 枚なので、約 50 秒続けて失敗したら再起動する
@@ -193,7 +191,7 @@ final class OCRIndexer: @unchecked Sendable {
               let image = CGImageSourceCreateImageAtIndex(
                   source, 0, [kCGImageSourceShouldCache: false] as CFDictionary
               ) else {
-            store.insert(Row(
+            store.insert(OCRRow(
                 day: day, base: base, gen: gen, ts: ts, path: url.path,
                 width: 0, height: 0, bytes: bytes,
                 text: "", lines: 0, conf: 0, ocrMS: 0,
@@ -220,21 +218,10 @@ final class OCRIndexer: @unchecked Sendable {
         do {
             let handler = VNImageRequestHandler(cgImage: image, options: [:])
             try handler.perform([request])
-            // 読み順に近づける: 上から下、同じ行内は左から右
-            let sorted = (request.results ?? []).sorted { a, b in
-                let ay = a.boundingBox.midY, by = b.boundingBox.midY
-                if abs(ay - by) > 0.01 { return ay > by }
-                return a.boundingBox.minX < b.boundingBox.minX
-            }
-            var parts: [String] = []
-            var confs: [Double] = []
-            for observation in sorted {
-                guard let top = observation.topCandidates(1).first else { continue }
-                parts.append(top.string)
-                confs.append(Double(top.confidence))
-            }
-            lineCount = parts.count
-            text = parts.joined(separator: "\n")
+            let observations = request.results ?? []
+            let confs = observations.compactMap { $0.topCandidates(1).first.map { Double($0.confidence) } }
+            // 境目で割り、領域ごとの読み順に並べる（OCRLayout.swift）
+            (text, lineCount) = layoutText(observations, image: image)
             meanConf = confs.isEmpty ? 0 : confs.reduce(0, +) / Double(confs.count)
             // 黒画面など文字が 1 つも無い場合。失敗と区別する（黙って落とさない）
             if lineCount == 0 { status = "empty" }
@@ -244,7 +231,7 @@ final class OCRIndexer: @unchecked Sendable {
         }
 
         let ms = Int((DispatchTime.now().uptimeNanoseconds - t0) / 1_000_000)
-        store.insert(Row(
+        store.insert(OCRRow(
             day: day, base: base, gen: gen, ts: ts, path: url.path,
             width: image.width, height: image.height, bytes: bytes,
             text: text, lines: lineCount, conf: meanConf, ocrMS: ms,
@@ -261,128 +248,5 @@ final class OCRIndexer: @unchecked Sendable {
         if let store { return store }
         store = OCRStore(url: dbURL)
         return store
-    }
-}
-
-// MARK: - SQLite
-
-/// `scripts/ocr-extract.swift` と同じファイルを共有する。スキーマ・主キー・
-/// FTS の作り方をずらすと、backlog 埋めを外から流した時に壊れる。
-private struct Row {
-    let day: String, base: String
-    let gen: Int, ts: Double, path: String
-    let width: Int, height: Int, bytes: Int
-    let text: String, lines: Int, conf: Double, ocrMS: Int
-    let status: String
-    var err: String?
-}
-
-private final class OCRStore {
-    private var db: OpaquePointer?
-    private var insertShot: OpaquePointer?
-    private var insertFTS: OpaquePointer?
-
-    init?(url: URL) {
-        try? FileManager.default.createDirectory(
-            at: url.deletingLastPathComponent(), withIntermediateDirectories: true
-        )
-        guard sqlite3_open_v2(
-            url.path, &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, nil
-        ) == SQLITE_OK else { return nil }
-
-        exec("PRAGMA journal_mode=WAL;")
-        exec("PRAGMA synchronous=NORMAL;")
-        // scripts/ocr-extract.swift を backlog 埋めで同時に回すことがある。WAL でも
-        // writer は同時に 1 つなので、これが無いと INSERT が SQLITE_BUSY で黙って落ちる
-        exec("PRAGMA busy_timeout=60000;")
-        exec("""
-        CREATE TABLE IF NOT EXISTS shots (
-          day TEXT NOT NULL, base TEXT NOT NULL, gen INTEGER NOT NULL,
-          ts REAL NOT NULL, path TEXT NOT NULL,
-          width INTEGER, height INTEGER, bytes INTEGER,
-          dark_fraction REAL, mean_lum REAL,
-          text TEXT, lines INTEGER, conf REAL, ocr_ms INTEGER,
-          status TEXT NOT NULL, err TEXT,
-          PRIMARY KEY (day, base)
-        );
-        """)
-        exec("CREATE INDEX IF NOT EXISTS shots_ts ON shots(ts);")
-        exec("CREATE INDEX IF NOT EXISTS shots_status ON shots(status);")
-        // 日本語を substring で引くため trigram。unicode61 は CJK を分割しない
-        exec("""
-        CREATE VIRTUAL TABLE IF NOT EXISTS shots_fts
-        USING fts5(text, day UNINDEXED, base UNINDEXED, tokenize='trigram');
-        """)
-
-        guard sqlite3_prepare_v2(db, """
-        INSERT OR REPLACE INTO shots
-          (day, base, gen, ts, path, width, height, bytes, dark_fraction, mean_lum,
-           text, lines, conf, ocr_ms, status, err)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);
-        """, -1, &insertShot, nil) == SQLITE_OK,
-              sqlite3_prepare_v2(
-                  db, "INSERT INTO shots_fts (text, day, base) VALUES (?,?,?);",
-                  -1, &insertFTS, nil
-              ) == SQLITE_OK else { return nil }
-    }
-
-    deinit {
-        sqlite3_finalize(insertShot)
-        sqlite3_finalize(insertFTS)
-        sqlite3_close(db)
-    }
-
-    private func exec(_ sql: String) {
-        sqlite3_exec(db, sql, nil, nil, nil)
-    }
-
-    func existingKeys(excludingFailed: Bool = false) -> Set<String> {
-        var set = Set<String>()
-        var stmt: OpaquePointer?
-        let sql = excludingFailed
-            ? "SELECT day, base FROM shots WHERE status != 'failed';"
-            : "SELECT day, base FROM shots;"
-        guard sqlite3_prepare_v2(db, sql, -1, &stmt, nil) == SQLITE_OK
-        else { return set }
-        defer { sqlite3_finalize(stmt) }
-        while sqlite3_step(stmt) == SQLITE_ROW {
-            let day = String(cString: sqlite3_column_text(stmt, 0))
-            let base = String(cString: sqlite3_column_text(stmt, 1))
-            set.insert("\(day)/\(base)")
-        }
-        return set
-    }
-
-    func insert(_ row: Row) {
-        sqlite3_reset(insertShot)
-        sqlite3_clear_bindings(insertShot)
-        sqlite3_bind_text(insertShot, 1, row.day, -1, SQLITE_TRANSIENT)
-        sqlite3_bind_text(insertShot, 2, row.base, -1, SQLITE_TRANSIENT)
-        sqlite3_bind_int(insertShot, 3, Int32(row.gen))
-        sqlite3_bind_double(insertShot, 4, row.ts)
-        sqlite3_bind_text(insertShot, 5, row.path, -1, SQLITE_TRANSIENT)
-        sqlite3_bind_int(insertShot, 6, Int32(row.width))
-        sqlite3_bind_int(insertShot, 7, Int32(row.height))
-        sqlite3_bind_int(insertShot, 8, Int32(row.bytes))
-        sqlite3_bind_null(insertShot, 9)
-        sqlite3_bind_null(insertShot, 10)
-        sqlite3_bind_text(insertShot, 11, row.text, -1, SQLITE_TRANSIENT)
-        sqlite3_bind_int(insertShot, 12, Int32(row.lines))
-        sqlite3_bind_double(insertShot, 13, row.conf)
-        sqlite3_bind_int(insertShot, 14, Int32(row.ocrMS))
-        sqlite3_bind_text(insertShot, 15, row.status, -1, SQLITE_TRANSIENT)
-        if let err = row.err {
-            sqlite3_bind_text(insertShot, 16, err, -1, SQLITE_TRANSIENT)
-        } else {
-            sqlite3_bind_null(insertShot, 16)
-        }
-        sqlite3_step(insertShot)
-
-        guard !row.text.isEmpty else { return }
-        sqlite3_reset(insertFTS)
-        sqlite3_bind_text(insertFTS, 1, row.text, -1, SQLITE_TRANSIENT)
-        sqlite3_bind_text(insertFTS, 2, row.day, -1, SQLITE_TRANSIENT)
-        sqlite3_bind_text(insertFTS, 3, row.base, -1, SQLITE_TRANSIENT)
-        sqlite3_step(insertFTS)
     }
 }

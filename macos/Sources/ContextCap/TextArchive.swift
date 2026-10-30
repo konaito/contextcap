@@ -11,10 +11,10 @@ private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.sel
 ///
 /// - **読み取り専用で別に開く。** `OCRIndexer` の接続はそのキューに閉じている。
 ///   WAL なので、書き込み中でも読める
-/// - **すべて自前のシリアルキューで走らせる。** DB は 6.4GB あり、日の一覧（GROUP BY）は
-///   キャッシュが冷えていると十数秒かかる（実測 17.8 秒、温まると 0.8 秒）
-/// - 検索は FTS5 trigram（`shots_fts`）。trigram は 3 文字未満を引けないので、
-///   2 文字以下は新しい順に `instr` で走査する（実測 2.6 秒）
+/// - **すべて自前のシリアルキューで走らせる。** 日の一覧（GROUP BY）は、行の辞書に移す前の
+///   6.4GB の DB では冷えていると 17.8 秒かかった。移した後の 1GB では 0.14 秒（2026-10-23 実測）
+/// - 文字は 1 行ずつの辞書で持っている（`OCRStore`）。検索は辞書に張った FTS5 trigram（`lines_fts`）で引く。
+///   trigram は 3 文字未満を引けないので、2 文字以下は辞書を `instr` で走査する
 final class TextArchive: @unchecked Sendable {
     struct Day: Sendable {
         /// `YYYY-MM-DD`
@@ -82,7 +82,7 @@ final class TextArchive: @unchecked Sendable {
         queue.async { [self] in
             var out: [Day] = []
             query(
-                "SELECT day, count(*) FROM shots WHERE status = 'ok' GROUP BY day ORDER BY day DESC;"
+                "SELECT day, count(*) FROM frames WHERE status = 'ok' GROUP BY day ORDER BY day DESC;"
             ) { stmt in
                 out.append(Day(name: Self.string(stmt, 0), shots: Int(sqlite3_column_int(stmt, 1))))
             }
@@ -97,14 +97,15 @@ final class TextArchive: @unchecked Sendable {
     func passages(day: String, completion: @escaping @MainActor ([Passage]) -> Void) {
         let token = nextGeneration()
         queue.async { [self] in
-            var rows: [(String, String, String)] = []
-            query(
-                "SELECT day, base, text FROM shots WHERE day = ? AND status = 'ok' ORDER BY base;",
-                bind: [day]
-            ) { stmt in
-                rows.append((Self.string(stmt, 0), Self.string(stmt, 1), Self.string(stmt, 2)))
+            var rows: [Row] = []
+            query("""
+            SELECT day, base, text_id FROM frames
+            WHERE day = ? AND status = 'ok' AND text_id IS NOT NULL ORDER BY base;
+            """, bind: [day]) { stmt in
+                rows.append(Row(day: Self.string(stmt, 0), base: Self.string(stmt, 1),
+                                textID: sqlite3_column_int64(stmt, 2)))
             }
-            let out = Self.collapse(rows)
+            let out = passages(Self.collapse(rows))
             guard isCurrent(token) else { return }
             Task { @MainActor in completion(out) }
         }
@@ -121,30 +122,20 @@ final class TextArchive: @unchecked Sendable {
             guard isCurrent(token) else { return }
             lock.lock(); searchRunning = true; lock.unlock()
             defer { lock.lock(); searchRunning = false; lock.unlock() }
-            var rows: [(String, String, String)] = []
-            let step: (OpaquePointer) -> Void = { stmt in
-                rows.append((Self.string(stmt, 0), Self.string(stmt, 1), Self.string(stmt, 2)))
+            var rows: [Row] = []
+            // 句として渡す。記号や AND/OR が FTS5 の演算子として解釈されないように
+            let (ids, value) = text.count >= 3
+                ? (OCRStore.matchingTextIDs, "\"" + text.replacingOccurrences(of: "\"", with: "\"\"") + "\"")
+                : (OCRStore.matchingTextIDsShort, text)
+            query("""
+            SELECT day, base, text_id FROM frames
+            WHERE status = 'ok' AND text_id IN (\(ids))
+            ORDER BY ts DESC LIMIT \(Self.searchLimit);
+            """, bind: [value]) { stmt in
+                rows.append(Row(day: Self.string(stmt, 0), base: Self.string(stmt, 1),
+                                textID: sqlite3_column_int64(stmt, 2)))
             }
-            if text.count >= 3 {
-                // 句として渡す。記号や AND/OR が FTS5 の演算子として解釈されないように
-                let phrase = "\"" + text.replacingOccurrences(of: "\"", with: "\"\"") + "\""
-                query("""
-                SELECT s.day, s.base, s.text FROM shots_fts f
-                JOIN shots s ON s.day = f.day AND s.base = f.base
-                WHERE shots_fts MATCH ? AND s.status = 'ok'
-                ORDER BY s.ts DESC LIMIT \(Self.searchLimit);
-                """, bind: [phrase], step: step)
-            } else {
-                query("""
-                SELECT day, base, text FROM shots
-                WHERE status = 'ok' AND instr(text, ?) > 0
-                ORDER BY ts DESC LIMIT \(Self.searchLimit);
-                """, bind: [text], step: step)
-            }
-            // FTS には同じ画像が 2 行入っていることがある（shots は REPLACE、FTS は追記のため）
-            var seen = Set<String>()
-            rows = rows.filter { seen.insert("\($0.0)/\($0.1)").inserted }
-            let out = Self.collapse(rows)
+            let out = passages(Self.collapse(rows))
             guard isCurrent(token) else { return }
             Task { @MainActor in completion(out) }
         }
@@ -152,19 +143,37 @@ final class TextArchive: @unchecked Sendable {
 
     // MARK: - 内部
 
-    /// 並び順のまま、同じ日で同じ文字が続く行を 1 つの区間にまとめる
-    static func collapse(_ rows: [(day: String, base: String, text: String)]) -> [Passage] {
-        var out: [Passage] = []
-        for row in rows where !row.text.isEmpty {
-            if var last = out.last, last.day == row.day, last.text == row.text {
-                last.lastBase = row.base
-                last.count += 1
-                out[out.count - 1] = last
+    private struct Row {
+        let day: String, base: String, textID: Int64
+    }
+
+    /// 並び順のまま、同じ日で同じ本文が続く行を 1 つの区間にまとめる。
+    /// 本文は `OCRStore` が 1 つにまとめているので、同じ文字なら同じ `textID` になる
+    private static func collapse(_ rows: [Row]) -> [(first: Row, last: Row, count: Int)] {
+        var out: [(first: Row, last: Row, count: Int)] = []
+        for row in rows {
+            if let prev = out.last, prev.first.day == row.day, prev.first.textID == row.textID {
+                out[out.count - 1] = (prev.first, row, prev.count + 1)
             } else {
-                out.append(Passage(day: row.day, firstBase: row.base, lastBase: row.base, count: 1, text: row.text))
+                out.append((row, row, 1))
             }
         }
         return out
+    }
+
+    /// 区間ごとに 1 回だけ本文を組み立てる。`queue` の上でだけ呼ぶ
+    private func passages(_ runs: [(first: Row, last: Row, count: Int)]) -> [Passage] {
+        var texts: [Int64: String] = [:]
+        return runs.map { run in
+            let text = texts[run.first.textID] ?? {
+                var value = ""
+                query(OCRStore.textByID, bind: [String(run.first.textID)]) { value = Self.string($0, 0) }
+                texts[run.first.textID] = value
+                return value
+            }()
+            return Passage(day: run.first.day, firstBase: run.first.base, lastBase: run.last.base,
+                           count: run.count, text: text)
+        }
     }
 
     private func nextGeneration() -> Int {

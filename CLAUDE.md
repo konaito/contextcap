@@ -4,8 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## このリポジトリの位置づけ
 
-`imi-chat/contextcap` は **MiaChat 本体（`imi-chat/imi-chat`）とは別の独立リポジトリ**。
-親ディレクトリ経由で `imi-chat` の `AGENTS.md` / `CLAUDE.md` が読み込まれることがあるが、
+このリポジトリは単独の独立リポジトリ。
+親ディレクトリ経由で他のプロジェクトの `AGENTS.md` / `CLAUDE.md` が読み込まれることがあるが、
 **あちらの規約（`develop` 向け PR、issue assign 排他ロック、`pr-size-check`、Vercel / Prisma / Supabase の手順）はここには一切適用されない。**
 
 ここは `main` 単独。CI もリリースワークフローもない。検証はローカルで完結させる。
@@ -107,6 +107,17 @@ ScreenCaptureKit 撮影 + 等倍 JPEG 保存 + OCR キューへの enqueue）。
 「撮った瞬間に OCR」が成立しない。**並列にしない** — Vision は内部でシリアライズしていてスレッドを
 2/4/8/12/20 と増やしても 1.55〜1.57 枚/秒で変わらず、同時に 1 枚しか持たないほうがメモリも軽い。
 DB は `scripts/ocr-extract.swift` と同じ `~/ContextCap-analysis/ocr.sqlite`・同じスキーマ・同じ主キー。
+**文字は 1 行ずつの辞書で持つ（schema 2、`OCRStore`）。** `lines`（行の辞書・ここにだけ FTS5 trigram）、
+`texts`（行番号の並び）、`line_runs`（行 → それを含む本文の範囲）、`frames`（1 枚ごと）。
+`shots` は旧形式と同じ列を返す**ビュー**で、`select text from shots` はそのまま通る。書き込みは `frames` へ。
+2026-10-23 に 6.85GB → 約 1GB。検索結果は旧形式と同じ（改行を含まない語は 1 行の中でしか当たらない）。
+- `ocr-extract.swift` は `OCRStore.swift` と `OCRLayout.swift` と一緒にコンパイルする。書き込み処理と並べ方を複製しない
+- **行の並べ方は `OCRLayout.layoutText`。** 画面の境目で行を割り、領域ごとに並べ、領域の間に空行を入れる。
+  imichat2b#316 からの写しで、閾値は原本のまま動かさない。原本との違いは `separates(left:right:)` の 1 か所だけ。
+  `split` 側の条件を緩めると単語の途中で割れる（432 枚で 4 行）。変えたら `scripts/ocr-layout-eval.swift` で
+  変更前後を比べ、割れた行を画像で全部見る
+- **アプリは旧形式（`user_version` 0 で `shots` テーブルがある）には書かない。** 移行は `scripts/ocr-compact.py`
+- 本文の連番が `line_runs` の前提。1 枚の書き込み（辞書・本文・範囲・frames）は 1 トランザクションで行う
 
 **スリープ復帰後に Vision がプロセス内で壊れ、再起動まで全件 failed になることがある**（4 日で 16,698 件）。
 撮影直後の OCR が 10 回続けて失敗したらアプリが自分で起動し直し（1 時間に 1 回まで）、
@@ -115,6 +126,13 @@ DB は `scripts/ocr-extract.swift` と同じ `~/ContextCap-analysis/ocr.sqlite`�
 - 撮影は直列。前の撮影＋保存が終わっていなければ次の tick はスキップ
 - スリープ・ロック中は ScreenCaptureKit が失敗する。**エラーは無視して次の tick へ**（落とさない）
 - ディスプレイ構成が変わるたび `SCShareableContent` を取り直す
+
+`scripts/contextcap-mcp.py` は `ocr.sqlite` を読むだけの MCP サーバー（uv の inline script・`mcp` 2.x）。
+アプリには入っていない。検証は実 DB に対して関数を直接呼ぶか、MCP クライアントから stdio でつなぐ。
+- **語 → フレームの SQL は `line_runs CROSS JOIN frames` と `+f.status` / `+f.ts` で結合順を固定している。**
+  外すと SQLite が `frames_status` で全フレームを舐める計画を選ぶ（`"TypeError"` の全期間検索で 14.6 秒 → 0.14 秒）
+- 「割って引き直す」は句 1 つ（`"..."` か空白のない 1 語）のときだけ。キーワード列で割ると言い換え検索が落ちた。
+  数値は `docs/results/2026-10-23-search-eval.md`
 
 ### Android 版（`android/app/src/main/java/app/imichat/contextcap/`）
 
@@ -146,7 +164,7 @@ companion object に集約。**テスト時はここを書き換えて再ビル�
 判定は `FrameBlackness`（純ロジック・unit test 済み）で、格子に割って「セルごと真っ黒」を数える。
 **黒いピクセルの割合で判定しない**（ダークモード画面が同じ形になる）。閾値 85% なのは、
 保護画面でもステータスバーとナビゲーションバーが写るから。**判定は必ず保存の前**に置く
-（後段で落とすと MiaChat 本体 #1523 と同じ構図になる）。
+（後段で落とすと、黒画面を解析側が誤読して閉ループを作る構図になる）。
 
 踏み抜きやすい罠（詳細と実測値は `android/README.md`）:
 
@@ -228,4 +246,4 @@ cd macos && SKIP_INSTALL=1 ./scripts/build-app.sh   # → .app 内に AppIcon.ic
   `/snapshot/` `/snapshots/`）
 - **黒画像を無視しない。** DRM / `FLAG_SECURE` の領域は黒塗りで撮影される。撮影は止まらない。
   Android 版は全面が黒いフレームだけ保存せずに捨てるが、**部分的に黒い画面と macOS 版は残る**。
-  解析に回すときは除外する（MiaChat 本体 #1523 と同型の罠）
+  解析に回すときは除外する（黒画面を誤読して閉ループを作る罠）

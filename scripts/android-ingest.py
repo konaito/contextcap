@@ -50,8 +50,10 @@ CREATE INDEX IF NOT EXISTS shots_ts ON shots(ts);
 CREATE INDEX IF NOT EXISTS shots_status ON shots(status);
 CREATE INDEX IF NOT EXISTS shots_pkg ON shots(pkg);
 
+-- 索引は本文の写しを持たず shots を rowid で引く。毎回 rebuild するのでトリガは要らない
 CREATE VIRTUAL TABLE IF NOT EXISTS shots_fts
-USING fts5(text, day UNINDEXED, base UNINDEXED, tokenize='trigram');
+USING fts5(text, day UNINDEXED, base UNINDEXED,
+           content='shots', content_rowid='rowid', tokenize='trigram');
 
 CREATE TABLE IF NOT EXISTS apps (
   day TEXT NOT NULL, base TEXT NOT NULL, ts REAL NOT NULL, pkg TEXT NOT NULL,
@@ -137,6 +139,10 @@ def main() -> int:
             black_rows.append((day, obj["t"], stem_to_ts(day, obj["t"]), obj.get("state", "?")))
 
     con = sqlite3.connect(args.db)
+    # 本文の写しを持つ旧形式の索引は作り直す（どうせ下で全部張り替える）
+    legacy = con.execute("SELECT sql FROM sqlite_master WHERE name = 'shots_fts'").fetchone()
+    if legacy and "content='shots'" not in legacy[0]:
+        con.execute("DROP TABLE shots_fts")
     con.executescript(SCHEMA)
     con.executemany(
         "INSERT OR REPLACE INTO shots (day,base,ts,gen,width,height,bytes,"
@@ -145,11 +151,9 @@ def main() -> int:
     con.executemany(
         "INSERT OR REPLACE INTO blackouts (day,base,ts,state) VALUES (?,?,?,?)", black_rows)
 
-    # FTS は毎回作り直す。差分更新のトリガを持つより、この規模(数万行)なら全張り替えが安い
-    con.execute("DELETE FROM shots_fts")
-    con.execute(
-        "INSERT INTO shots_fts (text, day, base) "
-        "SELECT text, day, base FROM shots WHERE text IS NOT NULL AND text != ''")
+    # FTS は毎回作り直す。差分更新のトリガを持つより、この規模(数万行)なら全張り替えが安い。
+    # 上の REPLACE で rowid が振り直されるので、差分では合わせられない
+    con.execute("INSERT INTO shots_fts(shots_fts) VALUES ('rebuild')")
     con.commit()
 
     n_shots = con.execute("SELECT count(*) FROM shots").fetchone()[0]
