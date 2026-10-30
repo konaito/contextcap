@@ -14,13 +14,15 @@ Claude Code はそれを必要な時に読みに行き、溜まった文脈か�
 
 ## Claude Code から読む
 
-パソコンの文字は SQLite に入っていて、全文検索できる。
+パソコンの文字は SQLite に入っていて、全文検索できる（検索語は 3 文字以上）。
 
 ```bash
 sqlite3 -readonly ~/ContextCap-analysis/ocr.sqlite \
-  "select s.day, s.base, s.text from shots_fts f
-   join shots s on s.day = f.day and s.base = f.base
-   where shots_fts match '\"検索語\"' order by s.ts desc limit 20"
+  "select day, base, text from shots
+   where status = 'ok' and text_id in (
+     select t.id from line_runs r join texts t on t.id between r.first_text and r.last_text
+     where r.line_id in (select rowid from lines_fts where lines_fts match '\"検索語\"'))
+   order by ts desc limit 20"
 ```
 
 スマホの文字と画像は、Tailscale 経由で読む。アプリのホームで「パソコンから読む」をオンにすると、
