@@ -1,0 +1,46 @@
+# LP（lp/）を contextcap.fybe.jp に出す。main に lp/ の変更が入った時だけ動く。
+# 手元から出すときは `cd lp && bun run deploy`（同じコマンド）。
+name: Deploy LP
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "lp/**"
+      - ".github/workflows/deploy-lp.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# 同時に 2 本走らせない。後から来た方は前の完了を待つ
+concurrency:
+  group: deploy-lp
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: lp
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+      # void は node >= 24.21 を要求する
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+      - run: bun install --frozen-lockfile
+      - run: ./node_modules/.bin/void deploy --platform cloudflare
+        env:
+          CI: "1"
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: 9b67e2ec0e2cf3359289e1fc860d3777
+      - name: 公開されたファイルが手元と一致するか確かめる
+        run: |
+          for f in index.html skills.md skill.md llms.txt icon.svg; do
+            path=$f; [ "$f" = index.html ] && path=
+            curl -fsS "https://contextcap.fybe.jp/$path" | cmp - "site/$f"
+          done

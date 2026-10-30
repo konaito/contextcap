@@ -1,0 +1,14 @@
+# ContextCap
+
+> ContextCap captures the user's Mac screen every 5 seconds and Android screen every 10 seconds, runs OCR on the device, and keeps the text on the user's own machines. Images are deleted after a few days; the text is kept. AI agents read this archive to recover what the user was looking at instead of asking them to explain it again. ContextCap itself never clicks or types, has no code that sends captured images or text to a cloud or outside server, and does not analyze the content. The Android app can serve its archive read-only to your own devices over Tailscale, but only when you turn that on.
+
+The Android build includes Google ML Kit, which sends its own diagnostic data to Google. There is no iPhone version.
+
+## For agents
+
+- [skills.md](https://contextcap.fybe.jp/skills.md): Where the archive lives (macOS SQLite, Android JSONL over Tailscale), the schema, verified queries, ground rules, and how to check you are reading live data. Install for Claude Code as `~/.claude/skills/contextcap/SKILL.md`.
+- [skill.md](https://contextcap.fybe.jp/skill.md): Same file as skills.md.
+
+## Source
+
+- [GitHub repository](https://github.com/konaito/contextcap): Source code and READMEs for the macOS and Android apps.

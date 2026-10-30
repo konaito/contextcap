@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="ja" data-show="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ContextCap</title>
+<meta name="description" content="Mac と Android の画面を数秒おきに撮って文字にし、手元に残す。その文字を AI に読ませられる。 / ContextCap captures your Mac and Android screens every few seconds and keeps the text on your own machines, so your AI can read what you saw.">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="icon" href="/icon.png" type="image/png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="alternate" type="text/markdown" href="/skills.md" title="ContextCap skill for AI agents">
+<link rel="describedby" type="text/markdown" href="/skills.md">
+<meta property="og:title" content="ContextCap">
+<meta property="og:description" content="コンテキストしか勝たん。 / Only context wins.">
+<meta property="og:image" content="https://contextcap.fybe.jp/media/poster.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@400&family=Noto+Sans+JP:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #ffffff;
+    --ink: #0b0b0c;
+    --muted: #5f636b;
+    --faint: #9aa0a8;
+    --line: #e7e8ea;
+    --panel: #f6f7f8;
+    --accent: #3d5a80;
+    --term: #0f1012;
+    --max: 1080px;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: Inter, "Noto Sans JP", system-ui, sans-serif;
+    font-size: 17px;
+    line-height: 1.8;
+    -webkit-font-smoothing: antialiased;
+  }
+  html[data-show="ja"] [lang="en"], html[data-show="en"] [lang="ja"] { display: none !important; }
+  a { color: inherit; }
+  .wrap { max-width: var(--max); margin: 0 auto; padding: 0 24px; }
+  header.bar {
+    position: sticky; top: 0; z-index: 10;
+    background: rgba(255,255,255,0.86);
+    backdrop-filter: saturate(180%) blur(12px);
+    border-bottom: 1px solid var(--line);
+  }
+  header.bar .wrap { display: flex; align-items: center; justify-content: space-between; height: 60px; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: -0.01em; text-decoration: none; }
+  .brand img { width: 26px; height: 26px; border-radius: 6px; }
+  nav { display: flex; align-items: center; gap: 22px; font-size: 14px; color: var(--muted); }
+  nav a { text-decoration: none; }
+  nav a:hover { color: var(--ink); }
+  .lang { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; overflow: hidden; }
+  .lang button {
+    border: 0; background: transparent; padding: 4px 12px; font: inherit; font-size: 13px;
+    color: var(--muted); cursor: pointer;
+  }
+  .lang button[aria-pressed="true"] { background: var(--ink); color: #fff; }
+
+  .hero { padding: 120px 0 56px; }
+  .hero h1 {
+    margin: 0; font-size: clamp(44px, 8vw, 92px); line-height: 1.12; font-weight: 500;
+    letter-spacing: -0.02em;
+  }
+  .hero h1 span[lang="ja"] { display: block; white-space: nowrap; font-size: min(88px, calc((100vw - 48px) / 12.4)); }
+  .hero p.lead { margin: 28px 0 0; max-width: 680px; font-size: 20px; color: var(--muted); }
+  .cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 36px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px; padding: 12px 20px; border-radius: 999px;
+    text-decoration: none; font-size: 15px; font-weight: 500; border: 1px solid var(--line);
+  }
+  .btn.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .btn code { font-family: "JetBrains Mono", monospace; font-size: 13px; }
+
+  .film { margin: 12px 0 0; }
+  .film video {
+    width: 100%; display: block; border-radius: 16px; background: #0a0a0a;
+    box-shadow: 0 30px 80px rgba(10,10,12,0.18);
+  }
+  .film figcaption { margin-top: 12px; font-size: 13px; color: var(--faint); }
+
+  section { padding: 112px 0 0; }
+  .eyebrow {
+    font-family: "JetBrains Mono", monospace; font-size: 12px; letter-spacing: 0.18em;
+    color: var(--faint); text-transform: uppercase;
+  }
+  h2 {
+    margin: 14px 0 0; font-size: clamp(30px, 4.4vw, 48px); line-height: 1.3; font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+  section > .wrap > p.body { max-width: 720px; margin: 22px 0 0; color: var(--muted); font-size: 18px; }
+
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 48px; }
+  .step { border-top: 1px solid var(--ink); padding-top: 20px; }
+  .step .n { font-family: "JetBrains Mono", monospace; font-size: 13px; color: var(--faint); }
+  .step h3 { margin: 8px 0 0; font-size: 22px; font-weight: 500; }
+  .step p { margin: 10px 0 0; color: var(--muted); font-size: 16px; }
+
+  .term {
+    margin-top: 44px; background: var(--term); color: #ededed; border-radius: 16px; overflow: hidden;
+    font-family: "JetBrains Mono", "Noto Sans JP", monospace; font-size: 15px; line-height: 1.75;
+  }
+  .term .tbar { height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 16px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+  .term .tbar i { width: 10px; height: 10px; border-radius: 5px; background: rgba(255,255,255,0.16); display: block; }
+  .term .tbar span { margin-left: 10px; color: rgba(237,237,237,0.4); font-size: 13px; }
+  .term .tbody { padding: 26px 30px 30px; }
+  .term .dim { color: rgba(237,237,237,0.55); }
+  .term .hit {
+    margin: 14px 0; padding: 12px 16px; border-left: 3px solid #8fa3b8; background: rgba(143,163,184,0.12);
+    border-radius: 8px;
+  }
+  .term .hit small { display: block; color: rgba(237,237,237,0.55); font-size: 12px; letter-spacing: 0.04em; }
+
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-top: 44px; }
+  .stat b { display: block; font-family: "JetBrains Mono", monospace; font-weight: 400; font-size: clamp(26px, 3.4vw, 40px); letter-spacing: -0.02em; }
+  .stat span { color: var(--muted); font-size: 14px; }
+  .note { margin-top: 16px; font-size: 13px; color: var(--faint); }
+
+  ul.plain { list-style: none; padding: 0; margin: 40px 0 0; max-width: 760px; }
+  ul.plain li { padding: 18px 0; border-top: 1px solid var(--line); }
+  ul.plain li b { display: block; font-weight: 500; font-size: 19px; }
+  ul.plain li span { color: var(--muted); font-size: 16px; }
+
+  .timeline { margin: 40px 0 0; max-width: 760px; }
+  .timeline div { display: grid; grid-template-columns: 120px 1fr; gap: 20px; padding: 16px 0; border-top: 1px solid var(--line); }
+  .timeline time { font-family: "JetBrains Mono", monospace; font-size: 14px; color: var(--faint); padding-top: 3px; }
+  .timeline p { margin: 0; color: var(--muted); font-size: 16px; }
+  .timeline a { font-size: 13px; color: var(--faint); }
+  .closing { margin-top: 32px; font-size: 22px; font-weight: 500; }
+
+  pre.code {
+    margin: 28px 0 0; padding: 20px 22px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; overflow-x: auto; font-family: "JetBrains Mono", monospace; font-size: 14px; line-height: 1.7;
+  }
+  .ask { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; margin-top: 40px; }
+  .ask-card { border: 1px solid var(--line); border-radius: 16px; padding: 22px; display: flex; flex-direction: column; gap: 16px; }
+  .ask-card h3 { margin: 0; font-size: 19px; font-weight: 500; }
+  .ask-card pre {
+    margin: 0; padding: 14px 16px; background: var(--panel); border-radius: 10px; white-space: pre-wrap;
+    font-family: "JetBrains Mono", "Noto Sans JP", monospace; font-size: 13px; line-height: 1.7; color: var(--muted); flex: 1;
+  }
+  .ask-card button {
+    align-self: flex-start; border: 0; cursor: pointer; font: inherit; font-size: 15px; font-weight: 500;
+    padding: 12px 20px; border-radius: 999px; background: var(--ink); color: #fff;
+  }
+  .ask-card button.done { background: var(--accent); }
+  .manual { margin-top: 36px; font-size: 15px; color: var(--muted); }
+  .links { display: flex; gap: 24px; margin-top: 20px; font-size: 15px; }
+  .links a { color: var(--accent); }
+
+  footer { margin-top: 140px; border-top: 1px solid var(--line); padding: 40px 0 64px; color: var(--faint); font-size: 14px; }
+  footer .wrap { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+
+  @media (max-width: 760px) {
+    nav a { display: none; }
+    .hero { padding-top: 80px; }
+    .steps, .stats, .ask { grid-template-columns: 1fr; }
+    .timeline div { grid-template-columns: 1fr; gap: 4px; }
+    section { padding-top: 88px; }
+  }
+</style>
+</head>
+<body>
+<header class="bar">
+  <div class="wrap">
+    <a class="brand" href="/"><img src="/icon.svg" alt="">ContextCap</a>
+    <nav>
+      <a href="#how"><span lang="ja">仕組み</span><span lang="en">How</span></a>
+      <a href="#local"><span lang="ja">なぜ手元か</span><span lang="en">Why local</span></a>
+      <a href="#agents"><span lang="ja">AI 向け</span><span lang="en">For agents</span></a>
+      <a href="https://github.com/konaito/contextcap">GitHub</a>
+      <span class="lang" role="group" aria-label="Language">
+        <button type="button" data-lang="ja" aria-pressed="true">日本語</button>
+        <button type="button" data-lang="en" aria-pressed="false">EN</button>
+      </span>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <div class="wrap hero">
+    <h1><span lang="ja">コンテキストしか勝たん。</span><span lang="en">Only context wins.</span></h1>
+    <p class="lead" lang="ja">Mac と Android の画面を、数秒おきに撮って文字にする。文字はあなたの手元に残り、AI に読ませられる。もう、同じ説明を繰り返さなくていい。</p>
+    <p class="lead" lang="en">ContextCap captures your Mac and Android screens every few seconds and turns them into text that stays on your own machines. Your AI can read it, so you stop explaining the same thing twice.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://github.com/konaito/contextcap"><span lang="ja">GitHub でソースを見る</span><span lang="en">View source on GitHub</span></a>
+      <a class="btn" href="#agents"><span lang="ja">Claude Code・Codex に入れてもらう</span><span lang="en">Install with Claude Code or Codex</span></a>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <figure class="film">
+      <video src="/media/contextcap-film.mp4" poster="/media/poster.jpg" controls playsinline preload="none"></video>
+      <figcaption><span lang="ja">55 秒。音が出ます。</span><span lang="en">55 seconds, with sound.</span></figcaption>
+    </figure>
+  </div>
+
+  <section id="how">
+    <div class="wrap">
+      <div class="eyebrow">How it works</div>
+      <h2><span lang="ja">撮る。文字にする。手元に残す。</span><span lang="en">Capture. Read. Keep.</span></h2>
+      <div class="steps">
+        <div class="step">
+          <div class="n">01</div>
+          <h3><span lang="ja">撮る</span><span lang="en">Capture</span></h3>
+          <p lang="ja">Mac はメインのディスプレイを 5 秒ごとに、Android は画面がついている間 10 秒ごとに撮る。撮るものは選ばない。一時停止でき、Android はアプリごとに除外もできる。</p>
+          <p lang="en">The main display every 5 seconds on Mac, and the screen every 10 seconds on Android while it is on. It does not pick what to capture. You can pause it, and on Android you can exclude apps.</p>
+        </div>
+        <div class="step">
+          <div class="n">02</div>
+          <h3><span lang="ja">文字にする</span><span lang="en">Read</span></h3>
+          <p lang="ja">Mac は撮ってすぐ Apple Vision で、Android は充電中に ML Kit で OCR する。どちらも端末の中で動く。</p>
+          <p lang="en">OCR runs on the device: Apple Vision right after each capture on Mac, ML Kit while charging on Android.</p>
+        </div>
+        <div class="step">
+          <div class="n">03</div>
+          <h3><span lang="ja">画像は消し、文字は残す</span><span lang="en">Drop the images, keep the words</span></h3>
+          <p lang="ja">画像は Mac で 3 日、Android で 14 日たつか、容量の上限（40GB / 10GB）を超えると古い順に自動で消える。文字は自動では消さない。文字にできていない画像も自動では消さない。</p>
+          <p lang="en">Images are deleted automatically, oldest first, after 3 days on Mac and 14 days on Android, or when storage passes 40 GB / 10 GB. The text is never deleted automatically, and neither is an image whose text has not been saved.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="now">
+    <div class="wrap">
+      <div class="eyebrow">Now</div>
+      <h2><span lang="ja">さっき見ていたものを、AI が先に読む。</span><span lang="en">Your agent reads what you just saw.</span></h2>
+      <p class="body" lang="ja">エラーの文面も、読んでいたページも、もう貼り付けなくていい。skills.md を入れた Claude Code に一言頼めば、手元の文字から直近の画面を探す。</p>
+      <p class="body" lang="en">No more pasting the error or the page you were reading. Ask Claude Code with skills.md installed, and it looks through your recent screens.</p>
+      <div class="term" aria-label="Claude Code example">
+        <div class="tbar"><i></i><i></i><i></i><span>~/projects/search — claude</span></div>
+        <div class="tbody">
+          <div><span class="dim">&gt;</span> <span lang="ja">さっきのエラー、直して</span><span lang="en">fix the error I just saw</span></div>
+          <div class="dim">● ~/ContextCap-analysis/ocr.sqlite <span lang="ja">を読む　直近 10 分</span><span lang="en">· last 10 minutes</span></div>
+          <div class="hit"><small><span lang="ja">3分前</span><span lang="en">3 min ago</span> · Chrome · localhost:3000/search?page=2</small>TypeError: Cannot read properties of undefined (reading 'items')</div>
+          <div>● <span lang="ja">さっき見ていたエラーです。useSearch の初期値を直します。</span><span lang="en">That's the error you were looking at. Fixing the initial value in useSearch.</span></div>
+        </div>
+      </div>
+      <p class="note" lang="ja">画面は説明用に作ったもの。読み方は <a href="/skills.md">skills.md</a> に書いてある。</p>
+      <p class="note" lang="en">Illustration. How to read the archive is in <a href="/skills.md">skills.md</a>.</p>
+    </div>
+  </section>
+
+  <section id="later">
+    <div class="wrap">
+      <div class="eyebrow">Later</div>
+      <h2><span lang="ja">未来の AI が、あなたを知るための記録。</span><span lang="en">A record for the AI that will know you.</span></h2>
+      <p class="body" lang="ja">今日の文字は、直近の意図を汲むための材料になる。積み重なると、何を見て、何に時間を使ってきたかの記録になる。その記録は、会社のサーバーではなくあなたの手元にある。</p>
+      <p class="body" lang="en">Today's text helps an agent understand what you meant a minute ago. Over months it becomes a record of what you looked at and where your time went. That record lives on your machines, not on someone's server.</p>
+      <div class="stats">
+        <div class="stat"><b>482,830</b><span lang="ja">撮った画面</span><span lang="en">screens captured</span></div>
+        <div class="stat"><b>823,331,948</b><span lang="ja">読み取った文字</span><span lang="en">characters of text</span></div>
+        <div class="stat"><b>77</b><span lang="ja">日分</span><span lang="en">days</span></div>
+      </div>
+      <p class="note" lang="ja">作者の Mac の実測。2026-08-03 から 2026-10-22 の夕方まで。</p>
+      <p class="note" lang="en">Measured on the author's Mac, 2026-08-03 to the evening of 2026-10-22.</p>
+    </div>
+  </section>
+
+  <section id="not">
+    <div class="wrap">
+      <div class="eyebrow">What it doesn't do</div>
+      <h2><span lang="ja">しないこと。</span><span lang="en">What it doesn't do.</span></h2>
+      <ul class="plain">
+        <li lang="ja"><b>操作しない</b><span>クリックも入力もしない。撮って、文字にして、保存するだけ。</span></li>
+        <li lang="en"><b>It never acts</b><span>No clicks, no typing. It captures, reads, and saves.</span></li>
+        <li lang="ja"><b>撮ったものを外部のサービスに送らない</b><span>撮影した画像と文字を、クラウドや外部のサーバーに送るコードを持たない。</span></li>
+        <li lang="en"><b>It never uploads what it captures</b><span>There is no code that sends captured images or text to a cloud or any outside server.</span></li>
+        <li lang="ja"><b>中身を解析しない</b><span>文字の要約も分析もしない。読むのは、あなたが選んだ AI。</span></li>
+        <li lang="en"><b>It doesn't analyze the content</b><span>No summaries, no analysis of the text. The AI you choose does the reading.</span></li>
+        <li lang="ja"><b>文字になる前の画像を自動で消さない</b><span>OCR に失敗した画像も残す。Mac は次に起動した時に読み直す。</span></li>
+        <li lang="en"><b>It never auto-deletes an image before reading it</b><span>Images whose OCR failed are kept. The Mac app reads them again the next time it starts.</span></li>
+      </ul>
+      <p class="note" lang="ja">Android 版には Google の ML Kit が入っていて、ML Kit 自身の診断データ（端末やアプリの情報、性能の指標）を Google に送る（<a href="https://developers.google.com/ml-kit/android-data-disclosure">Google の説明</a>）。スマホのデータを PC から読む機能は初期状態でオフ。オンにすると、あなたの Tailscale ネットワークの中で合鍵を持つ端末だけが、読み取り専用で取りに来られる。</p>
+      <p class="note" lang="en">The Android build includes Google ML Kit, which sends its own diagnostic data (device and app information, performance metrics) to Google (<a href="https://developers.google.com/ml-kit/android-data-disclosure">Google's disclosure</a>). Reading phone data from your computer is off by default. When on, only devices on your Tailscale network that have the token can fetch it, read-only.</p>
+    </div>
+  </section>
+
+  <section id="local">
+    <div class="wrap">
+      <div class="eyebrow">Why local</div>
+      <h2><span lang="ja">約束は、会社の都合で変わる。</span><span lang="en">Promises change with the company.</span></h2>
+      <p class="body" lang="ja">画面や声を記録する製品は、これまでにもあった。そのうちいくつかは、記録の扱いや条件をあとから変えている。</p>
+      <p class="body" lang="en">Products that record your screen or voice have come before. Some of them later changed how your records are handled, or on what terms.</p>
+      <div class="timeline">
+        <div>
+          <time>2024-06</time>
+          <p lang="ja">Microsoft は Recall を既定でオフにし、Windows Hello での確認を必須にして、一般提供を延期した。 <a href="https://blogs.windows.com/windowsexperience/2024/06/07/update-on-the-recall-preview-feature-for-copilot-pcs/">Windows Blog</a></p>
+          <p lang="en">Microsoft made Recall opt-in, required Windows Hello, and delayed its release. <a href="https://blogs.windows.com/windowsexperience/2024/06/07/update-on-the-recall-preview-feature-for-copilot-pcs/">Windows Blog</a></p>
+        </div>
+        <div>
+          <time>2025-12</time>
+          <p lang="ja">Limitless（旧 Rewind）は Meta に買収された。Rewind の撮影と録音は 2025-12-19 に止まった。 <a href="https://www.limitless.ai/">limitless.ai</a></p>
+          <p lang="en">Limitless (formerly Rewind) was acquired by Meta. Rewind's screen and audio capture was turned off on 2025-12-19. <a href="https://www.limitless.ai/">limitless.ai</a></p>
+        </div>
+        <div>
+          <time>2026-06</time>
+          <p lang="ja">Screenpipe は中核部分のライセンスを MIT から商用ライセンスに変えた。 <a href="https://github.com/screenpipe/screenpipe/commit/81e412ff5315dd7f6e270bed1911fadb2de5dc44">GitHub</a></p>
+          <p lang="en">Screenpipe moved its core from the MIT license to a commercial license. <a href="https://github.com/screenpipe/screenpipe/commit/81e412ff5315dd7f6e270bed1911fadb2de5dc44">GitHub</a></p>
+        </div>
+      </div>
+      <p class="closing" lang="ja">だから、記録は会社に預けない。ContextCap の記録は、あなたの Mac とスマホの中にある。</p>
+      <p class="closing" lang="en">So don't hand your record to a company. ContextCap keeps it on your Mac and your phone.</p>
+    </div>
+  </section>
+
+  <section id="agents">
+    <div class="wrap">
+      <div class="eyebrow">For agents</div>
+      <h2><span lang="ja">AI に、読み方を渡す。</span><span lang="en">Give your agent the manual.</span></h2>
+      <p class="body" lang="ja"><a href="/skills.md">skills.md</a> に、データの場所、読み方、守ること、読めているかの確かめ方を書いた。下の文をコピーして、使っているエージェントに貼れば、入れて確かめるところまでやってくれる。</p>
+      <p class="body" lang="en"><a href="/skills.md">skills.md</a> tells an agent where the data lives, how to query it, what rules to follow, and how to check it is reading live data. Copy a request below and paste it into your agent. It installs the skill and checks that it works.</p>
+      <div class="ask">
+        <div class="ask-card">
+          <h3>Claude Code</h3>
+          <pre lang="ja">ContextCap のスキルを入れて。
+https://contextcap.fybe.jp/skills.md を ~/.claude/skills/contextcap/SKILL.md に保存して（フォルダが無ければ作る）。
+保存したら中身を読んで、「Check that you are really reading the archive」の手順で、手元のアーカイブを本当に読めるか確かめて。</pre>
+          <pre lang="en">Install the ContextCap skill.
+Save https://contextcap.fybe.jp/skills.md as ~/.claude/skills/contextcap/SKILL.md (create the folder if needed).
+Then read it and follow "Check that you are really reading the archive" to confirm you can read my local archive.</pre>
+          <button type="button" data-agent="Claude Code"><span lang="ja">Claude Code に頼む文をコピー</span><span lang="en">Copy the request for Claude Code</span></button>
+        </div>
+        <div class="ask-card">
+          <h3>Codex</h3>
+          <pre lang="ja">ContextCap のスキルを入れて。
+https://contextcap.fybe.jp/skills.md を ~/.agents/skills/contextcap/SKILL.md に保存して（フォルダが無ければ作る）。
+保存したら中身を読んで、「Check that you are really reading the archive」の手順で、手元のアーカイブを本当に読めるか確かめて。</pre>
+          <pre lang="en">Install the ContextCap skill.
+Save https://contextcap.fybe.jp/skills.md as ~/.agents/skills/contextcap/SKILL.md (create the folder if needed).
+Then read it and follow "Check that you are really reading the archive" to confirm you can read my local archive.</pre>
+          <button type="button" data-agent="Codex"><span lang="ja">Codex に頼む文をコピー</span><span lang="en">Copy the request for Codex</span></button>
+        </div>
+      </div>
+      <p class="manual" lang="ja">手で入れるなら（Claude Code の場合）</p>
+      <p class="manual" lang="en">To install by hand (Claude Code)</p>
+      <pre class="code">mkdir -p ~/.claude/skills/contextcap &amp;&amp; curl -fsSL https://contextcap.fybe.jp/skills.md -o ~/.claude/skills/contextcap/SKILL.md</pre>
+      <div class="links">
+        <a href="/skills.md">/skills.md</a>
+        <a href="/llms.txt">/llms.txt</a>
+        <a href="https://github.com/konaito/contextcap">GitHub</a>
+      </div>
+    </div>
+  </section>
+
+  <section id="limits">
+    <div class="wrap">
+      <div class="eyebrow">Limits</div>
+      <h2><span lang="ja">今できないこと。</span><span lang="en">What it can't do yet.</span></h2>
+      <ul class="plain">
+        <li lang="ja"><b>iPhone 版は無い</b><span>iPhone は、ほかのアプリを使っている間も画面を撮り続けることへの制限が強い。スマホ版は Android だけ。</span></li>
+        <li lang="en"><b>No iPhone version</b><span>iPhone strongly restricts apps from capturing the screen while you use other apps. The phone version is Android only.</span></li>
+        <li lang="ja"><b>まだ配布していない</b><span>Mac も Android も、ソースからビルドして入れる。</span></li>
+        <li lang="en"><b>Not distributed yet</b><span>Build it from source for both Mac and Android.</span></li>
+        <li lang="ja"><b>保護された画面は黒くなる</b><span>DRM などで保護された画面は黒く撮れる。全面が黒い画面は保存しない。</span></li>
+        <li lang="en"><b>Protected screens come out black</b><span>DRM-protected screens are captured black. Fully black frames are not saved.</span></li>
+        <li lang="ja"><b>OCR は読み違える</b><span>字形の似た文字や、小さな文字を取り違えることがある。</span></li>
+        <li lang="en"><b>OCR makes mistakes</b><span>Small or similar-looking characters can be misread.</span></li>
+      </ul>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>ContextCap</span>
+    <span><a href="https://github.com/konaito/contextcap">github.com/konaito/contextcap</a> · <a href="/skills.md">skills.md</a> · <a href="/llms.txt">llms.txt</a></span>
+  </div>
+</footer>
+
+<script>
+  (function () {
+    var root = document.documentElement;
+    function apply(lang) {
+      root.setAttribute("data-show", lang);
+      root.setAttribute("lang", lang);
+      document.querySelectorAll(".lang button").forEach(function (b) {
+        b.setAttribute("aria-pressed", b.dataset.lang === lang ? "true" : "false");
+      });
+    }
+    var saved = null;
+    try { saved = localStorage.getItem("lang"); } catch (e) {}
+    var initial = saved || ((navigator.language || "ja").toLowerCase().indexOf("ja") === 0 ? "ja" : "en");
+    apply(initial);
+    document.querySelectorAll(".ask-card button").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var lang = root.getAttribute("data-show");
+        var text = b.parentNode.querySelector('pre[lang="' + lang + '"]').textContent;
+        var label = b.dataset.label || (b.dataset.label = b.innerHTML);
+        function done() {
+          b.classList.add("done");
+          b.textContent = lang === "ja" ? "コピーした。" + b.dataset.agent + " に貼って" : "Copied. Paste it into " + b.dataset.agent;
+          setTimeout(function () { b.classList.remove("done"); b.innerHTML = label; }, 2400);
+        }
+        function fallback() {
+          var t = document.createElement("textarea");
+          t.value = text; document.body.appendChild(t); t.select();
+          try { document.execCommand("copy"); } catch (e) {}
+          document.body.removeChild(t); done();
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(done, fallback);
+        } else { fallback(); }
+      });
+    });
+    document.querySelectorAll(".lang button").forEach(function (b) {
+      b.addEventListener("click", function () {
+        apply(b.dataset.lang);
+        try { localStorage.setItem("lang", b.dataset.lang); } catch (e) {}
+      });
+    });
+  })();
+</script>
+</body>
+</html>
