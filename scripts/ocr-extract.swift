@@ -1,7 +1,8 @@
 // ContextCap の撮影画像から Apple Vision で全文 OCR を抽出し、アプリと同じ ocr.sqlite に貯める。
 //
 //   swiftc -O -parse-as-library -o /tmp/ocr-extract \
-//     scripts/ocr-extract.swift macos/Sources/ContextCap/OCRStore.swift
+//     scripts/ocr-extract.swift macos/Sources/ContextCap/OCRStore.swift \
+//     macos/Sources/ContextCap/OCRLayout.swift
 //   /tmp/ocr-extract --root ~/ContextCap --db ~/ContextCap-analysis/ocr.sqlite
 //
 // 設計上の要点:
@@ -255,23 +256,11 @@ func recognize(_ shot: Shot) -> OCRResult {
         let handler = VNImageRequestHandler(cgImage: img, options: [:])
         try handler.perform([request])
         let obs = (request.results ?? [])
-        // 読み順に近づける: 上から下、同じ行内は左から右
-        let sorted = obs.sorted { a, b in
-            let ay = a.boundingBox.midY, by = b.boundingBox.midY
-            if abs(ay - by) > 0.005 { return ay > by }
-            return a.boundingBox.minX < b.boundingBox.minX
-        }
-        var parts: [String] = []
-        var confSum = 0.0
-        for o in sorted {
-            guard let c = o.topCandidates(1).first else { continue }
-            parts.append(c.string)
-            confSum += Double(c.confidence)
-        }
-        r.text = parts.joined(separator: "\n")
-        r.lines = parts.count
-        r.conf = parts.isEmpty ? 0 : confSum / Double(parts.count)
-        if parts.isEmpty { r.status = "empty" }
+        let confs = obs.compactMap { $0.topCandidates(1).first.map { Double($0.confidence) } }
+        // 境目で割り、領域ごとの読み順に並べる（アプリと同じ OCRLayout.swift）
+        (r.text, r.lines) = layoutText(obs, image: img)
+        r.conf = confs.isEmpty ? 0 : confs.reduce(0, +) / Double(confs.count)
+        if r.lines == 0 { r.status = "empty" }
     } catch {
         r.status = "error"
         r.err = error.localizedDescription

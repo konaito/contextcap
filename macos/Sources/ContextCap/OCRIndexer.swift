@@ -218,21 +218,10 @@ final class OCRIndexer: @unchecked Sendable {
         do {
             let handler = VNImageRequestHandler(cgImage: image, options: [:])
             try handler.perform([request])
-            // 読み順に近づける: 上から下、同じ行内は左から右
-            let sorted = (request.results ?? []).sorted { a, b in
-                let ay = a.boundingBox.midY, by = b.boundingBox.midY
-                if abs(ay - by) > 0.01 { return ay > by }
-                return a.boundingBox.minX < b.boundingBox.minX
-            }
-            var parts: [String] = []
-            var confs: [Double] = []
-            for observation in sorted {
-                guard let top = observation.topCandidates(1).first else { continue }
-                parts.append(top.string)
-                confs.append(Double(top.confidence))
-            }
-            lineCount = parts.count
-            text = parts.joined(separator: "\n")
+            let observations = request.results ?? []
+            let confs = observations.compactMap { $0.topCandidates(1).first.map { Double($0.confidence) } }
+            // 境目で割り、領域ごとの読み順に並べる（OCRLayout.swift）
+            (text, lineCount) = layoutText(observations, image: image)
             meanConf = confs.isEmpty ? 0 : confs.reduce(0, +) / Double(confs.count)
             // 黒画面など文字が 1 つも無い場合。失敗と区別する（黙って落とさない）
             if lineCount == 0 { status = "empty" }
