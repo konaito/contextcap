@@ -51,23 +51,32 @@ get the timestamp.
 
 ### `ocr.sqlite`
 
+Read the `shots` view. It returns one row per screenshot with the full OCR text, like a plain table.
+Underneath, the text is stored as a dictionary of distinct lines (the same screen is read every 5
+seconds, so 93% of the lines repeat), and the search index covers only those distinct lines.
+
 ```sql
-CREATE TABLE shots (
-  day TEXT NOT NULL,      -- 'YYYY-MM-DD' (local time)
-  base TEXT NOT NULL,     -- 'HHmmss_SSS' (local time)
-  gen INTEGER NOT NULL,
-  ts REAL NOT NULL,       -- capture time, Unix epoch seconds
-  path TEXT NOT NULL,     -- absolute path of the screenshot (may no longer exist)
+-- what to read: a view with these columns
+shots (
+  day TEXT,      -- 'YYYY-MM-DD' (local time)
+  base TEXT,     -- 'HHmmss_SSS' (local time)
+  gen INTEGER,
+  ts REAL,       -- capture time, Unix epoch seconds
+  path TEXT,     -- absolute path of the screenshot (may no longer exist)
   width INTEGER, height INTEGER, bytes INTEGER,
   dark_fraction REAL, mean_lum REAL,
-  text TEXT,              -- OCR text, one recognized line per line, top to bottom
+  text TEXT,     -- OCR text, one recognized line per line, top to bottom ('' when none)
   lines INTEGER, conf REAL, ocr_ms INTEGER,
-  status TEXT NOT NULL,   -- 'ok' | 'empty' (no text on screen) | 'failed'
+  status TEXT,   -- 'ok' | 'empty' (no text on screen) | 'failed'
   err TEXT,
-  PRIMARY KEY (day, base)
-);
--- full-text index, trigram tokenizer (works for Japanese; needs 3+ characters)
-CREATE VIRTUAL TABLE shots_fts USING fts5(text, day UNINDEXED, base UNINDEXED, tokenize='trigram');
+  text_id INTEGER -- same id = exactly the same text
+)
+-- underneath (for search):
+--   frames(day, base, ts, status, text_id, ...)   one row per screenshot
+--   lines(id, text)                               distinct lines
+--   lines_fts                                     FTS5 trigram index over lines (needs 3+ characters)
+--   texts(id, line_ids)                           line ids of one text, as a JSON array
+--   line_runs(line_id, first_text, last_text)     line -> range of text ids that contain it
 ```
 
 Always open it read-only. The app writes to it continuously (WAL mode).
@@ -81,10 +90,11 @@ sqlite3 -readonly ~/ContextCap-analysis/ocr.sqlite \
 
 # Search a phrase across everything (3+ characters; quote it as an FTS5 phrase)
 sqlite3 -readonly ~/ContextCap-analysis/ocr.sqlite \
-  "select s.day, s.base, s.text from shots_fts f
-   join shots s on s.day = f.day and s.base = f.base
-   where shots_fts match '\"TypeError\"' and s.status = 'ok'
-   order by s.ts desc limit 20"
+  "select day, base, text from shots
+   where status = 'ok' and text_id in (
+     select t.id from line_runs r join texts t on t.id between r.first_text and r.last_text
+     where r.line_id in (select rowid from lines_fts where lines_fts match '\"TypeError\"'))
+   order by ts desc limit 20"
 
 # A specific window: 14:00 to 14:30 on 2026-10-21
 sqlite3 -readonly ~/ContextCap-analysis/ocr.sqlite \
@@ -92,20 +102,22 @@ sqlite3 -readonly ~/ContextCap-analysis/ocr.sqlite \
    where status = 'ok' and day = '2026-10-21' and base between '140000' and '143000'
    order by base"
 
-# Phrases shorter than 3 characters: scan newest first and stop early
+# Phrases shorter than 3 characters: scan the distinct lines, not the view
 sqlite3 -readonly ~/ContextCap-analysis/ocr.sqlite \
   "select day, base, text from shots
-   where status = 'ok' and instr(text, '会議') > 0
+   where status = 'ok' and text_id in (
+     select t.id from line_runs r join texts t on t.id between r.first_text and r.last_text
+     where r.line_id in (select id from lines where instr(text, '会議') > 0))
    order by ts desc limit 20"
 ```
 
 Notes:
 
 - The screen changes slowly, so consecutive rows are often identical or nearly identical. Collapse
-  them before reading.
+  them before reading. Rows with the same `text_id` have exactly the same text.
 - One row is one whole display (about 3600 px wide on the author's machine), so a row can contain
   several windows. The text alone does not tell you which window was in front.
-- The first query after a while can take seconds (the database is several GB and the cache is cold).
+- The first query after a while can take seconds (the database is about 1 GB and the cache is cold).
 - `status = 'failed'` rows are frames whose OCR failed. The app retries them the next time it starts,
   so their text may appear later.
 
@@ -182,7 +194,7 @@ example `contextcap-check-7f3a`), wait about 10 seconds, then search for it:
 
 ```bash
 sqlite3 -readonly ~/ContextCap-analysis/ocr.sqlite \
-  "select day, base from shots_fts where shots_fts match '\"contextcap-check-7f3a\"' limit 1"
+  "select count(*) from lines_fts where lines_fts match '\"contextcap-check-7f3a\"'"
 ```
 
 A hit proves you are reading live data. Answering plausibly is not proof.
