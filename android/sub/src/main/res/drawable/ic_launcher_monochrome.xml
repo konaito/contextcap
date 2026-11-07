@@ -1,0 +1,60 @@
+<!--
+  contextcap-sub のテーマアイコン用。前景と同じ図形。系統色で塗り直されるので色は形のためだけ。
+  scripts/make-icons.py が生成する。手で直さない。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:pathData="M31.000,41.615 V34.538 A3.538,3.538 0 0,1 34.538,31.000 H41.615"
+        android:strokeColor="#121212"
+        android:strokeWidth="3.538"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <path
+        android:pathData="M66.385,31.000 H73.462 A3.538,3.538 0 0,1 77.000,34.538 V41.615"
+        android:strokeColor="#121212"
+        android:strokeWidth="3.538"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <path
+        android:pathData="M77.000,66.385 V73.462 A3.538,3.538 0 0,1 73.462,77.000 H66.385"
+        android:strokeColor="#121212"
+        android:strokeWidth="3.538"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <path
+        android:pathData="M41.615,77.000 H34.538 A3.538,3.538 0 0,1 31.000,73.462 V66.385"
+        android:strokeColor="#121212"
+        android:strokeWidth="3.538"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+
+    <path
+        android:pathData="M44.446,41.615 H63.554 A1.946,1.946 0 0,1 65.500,43.562 V48.338 A1.946,1.946 0 0,1 63.554,50.285 H44.446 A1.946,1.946 0 0,1 42.500,48.338 V43.562 A1.946,1.946 0 0,1 44.446,41.615 Z"
+        android:fillColor="#121212" />
+
+    <path
+        android:pathData="M43.738,54.708 H64.262"
+        android:strokeColor="#121212"
+        android:strokeWidth="2.477"
+        android:strokeLineCap="round" />
+
+    <path
+        android:pathData="M43.738,59.662 H59.838"
+        android:strokeColor="#121212"
+        android:strokeWidth="2.477"
+        android:strokeLineCap="round" />
+
+    <path
+        android:pathData="M43.738,64.615 H53.646"
+        android:strokeColor="#121212"
+        android:strokeWidth="2.477"
+        android:strokeLineCap="round" />
+</vector>

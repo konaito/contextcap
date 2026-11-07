@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 本体の地（#0A0A0A）を反転した色。make-icons.py の GROUND_SUB と同じ。sub のアイコンの地 -->
+    <color name="ic_launcher_background">#F5F5F5</color>
+</resources>
