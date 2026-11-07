@@ -21,11 +21,43 @@ android {
         versionName = "0.1.0"
     }
 
-    // 個人用の道具なので release も debug 鍵で署名する。
+    // 署名は ~/.android/debug.keystore に頼らず、リポジトリ外の固定の鍵で行う。
+    // debug.keystore は無いと AGP が黙って作り直すので、作り直されると端末の版に上書きできず
+    // （INSTALL_FAILED_UPDATE_INCOMPATIBLE）、アンインストールすると端末内の撮影データが消える。
+    // 2026-11-07 に実際に起き、データを退避してから入れ直した。
+    // 鍵の中身は debug 鍵と同じ形式（パスワード android、別名 androiddebugkey）。
+    // 置き場所は -Pcontextcap.keystore=<path> で変えられる。
+    // 鍵が無い Mac では debug 鍵に戻し、警告を出す。
+    val stableKeystore = file(
+        providers.gradleProperty("contextcap.keystore").orNull
+            ?: "${System.getProperty("user.home")}/.android-keystores/contextcap-debug.keystore",
+    )
+    signingConfigs {
+        create("stable") {
+            storeFile = stableKeystore
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+    val signing = if (stableKeystore.isFile) {
+        signingConfigs.getByName("stable")
+    } else {
+        logger.warn(
+            "ContextCap: $stableKeystore が無いので ~/.android/debug.keystore で署名する。" +
+                "端末の版と鍵が違うと上書きインストールできない",
+        )
+        signingConfigs.getByName("debug")
+    }
+
+    // 個人用の道具なので release も同じ鍵で署名する。
     // これで R8 を通した APK をそのまま実機で確認・運用できる。
     buildTypes {
+        debug {
+            signingConfig = signing
+        }
         release {
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signing
             // Compose は未使用コードが大量に入るため R8 を必ず通す。
             // 切ったままだと APK が 23MB になる（実測）。
             isMinifyEnabled = true

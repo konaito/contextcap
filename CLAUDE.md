@@ -58,6 +58,11 @@ cd android
 `local.properties`（`sdk.dir`）と `gradle.properties` の `org.gradle.java.home`（JBR 21 固定）は
 マシン固有。Homebrew の Java では AGP が動かない。
 
+署名は debug・release とも `~/.android-keystores/contextcap-debug.keystore`（リポジトリ外・固定）。
+`~/.android/debug.keystore` は作り直されることがあり、2026-11-07 に端末の版へ上書きできなくなった。
+**`INSTALL_FAILED_UPDATE_INCOMPATIBLE` が出ても `adb uninstall` しない。** 端末内の撮影データが消える。
+手順は `android/README.md` の「署名の鍵が変わったとき」。
+
 ## アーキテクチャ
 
 同じ道具の 2 実装（Swift / Kotlin）で、**共有コードは一切ない。共有しているのは保存形式の契約だけ。**
