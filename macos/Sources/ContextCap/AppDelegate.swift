@@ -48,10 +48,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         if let button = statusItem.button {
-            button.image = NSImage(
-                systemSymbolName: "camera.fill",
-                accessibilityDescription: "ContextCap"
-            )
+            // build-app.sh が assets/menubar.svg から書き出したテンプレート画像。
+            // swift run で .app を通さずに起動した時だけ SF Symbols に落とす
+            let icon = NSImage(named: "MenuBarIcon")
+                ?? NSImage(systemSymbolName: "viewfinder", accessibilityDescription: nil)
+            icon?.isTemplate = true
+            icon?.accessibilityDescription = "ContextCap"
+            button.image = icon
         }
 
         let menu = NSMenu()

@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- アイコンの地の紺。前景ビットマップの中間色に合わせてあるので、
-         視差で前景がずれても色が飛ばない -->
-    <color name="ic_launcher_background">#131D40</color>
+    <!-- アイコンの地。scripts/make-icons.py の GROUND と同じ黒 -->
+    <color name="ic_launcher_background">#0A0A0A</color>
 </resources>

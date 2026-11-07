@@ -220,21 +220,30 @@ curl -H "$H" -o /tmp/x.jpg http://100.103.43.26:8642/2026-10-21/120000_000.jpg
 
 ## アイコン
 
-マスターは `assets/icon.png`（1024×1024、角丸の外は透過）**1 枚だけ**。両プラットフォームの
-アイコンはここから生成する。マスターを差し替えたら下記を両方やり直す。
+図柄は「撮影枠の中で、画面が行にほどける」（2026-10-22 に作り直した）。四隅のブラケットが撮影枠、
+上の塊が撮った画面、下の 3 本が OCR で残る文字。地は PV・LP と同じ `#0A0A0A`、図柄は `#EDEDED`。
+
+**形の定義は `scripts/make-icons.py` だけに置く。** 生成物を手で直さず、スクリプトを直して流し直す。
 
 ```bash
-python3 scripts/make-android-icon.py   # → mipmap-*/ic_launcher_foreground.webp（要 Pillow）
-cd macos && SKIP_INSTALL=1 ./scripts/build-app.sh   # → .app 内に AppIcon.icns を生成
+python3 scripts/make-icons.py   # 標準ライブラリだけで動く
+cd macos && SKIP_INSTALL=1 ./scripts/build-app.sh   # → .app 内に AppIcon.icns と MenuBarIcon を生成
 ```
 
-- **`.icns` はリポジトリに置かない。** `build-app.sh` が `sips` + `iconutil`（どちらも macOS 標準）で
-  ビルドのたびに生成する。マスターと二重管理にしないため
-- Android の前景は**不透明**。108dp 全面に紺を敷いた上に元絵を 64dp で置いている。
-  64dp なのは、円マスク（Pixel のランチャー）で四隅のブラケットが欠けない上限だから。
-  これより大きくすると円で切れる
-- テーマアイコン用の `monochrome` だけは別のベクタ（`drawable/ic_launcher_monochrome.xml`）。
-  系統色で塗り直される層なので、写実的な前景を流用しない
+| 生成物 | 使う所 |
+|---|---|
+| `assets/icon.svg` | macOS のアプリアイコン（824 角の地を 1024 の中央に置く Apple のテンプレート） |
+| `assets/menubar.svg` | メニューバーのテンプレート画像。18pt で潰れないよう線を太らせてある |
+| `android/.../drawable/ic_launcher_foreground.xml` | アダプティブアイコンの前景（ベクタ） |
+| `android/.../drawable/ic_launcher_monochrome.xml` | テーマアイコン。前景と同じ図形 |
+| `lp/site/icon.svg` | LP の favicon とロゴ |
+
+- **`.icns` と PNG はリポジトリに置かない。** `build-app.sh` が `sips`（SVG を透過つきで描ける）と
+  `iconutil` でビルドのたびに作る。どちらも macOS 標準
+- Android のブラケットの外形は 46dp。角の外側（線幅の半分を含む）が中心から 32.8dp で、
+  円マスクの安全圏（半径 33dp）に入る上限だから。スクリプトが `assert` で確かめる
+- メニューバーは `NSImage(named: "MenuBarIcon")` を `isTemplate` で使う。`.app` を通さずに
+  `swift run` した時だけ SF Symbols の `viewfinder` に落ちる
 
 ## 変更時の作法
 
