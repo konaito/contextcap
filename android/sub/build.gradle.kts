@@ -18,10 +18,39 @@ android {
         versionName = "0.1.0"
     }
 
-    // 個人用の道具なので release も debug 鍵で署名する（:app と同じ方針）。
+    // 署名は :app と同じ固定の鍵でそろえる。~/.android/debug.keystore は AGP が黙って作り直すため、
+    // 作り直されると端末の版に上書きできず（INSTALL_FAILED_UPDATE_INCOMPATIBLE）、
+    // アンインストールすると端末内のデータが消える。置き場所は -Pcontextcap.keystore=<path> で変えられる。
+    // 鍵が無い Mac では debug 鍵に戻して警告を出す（:app と同一のロジック）。
+    val stableKeystore = file(
+        providers.gradleProperty("contextcap.keystore").orNull
+            ?: "${System.getProperty("user.home")}/.android-keystores/contextcap-debug.keystore",
+    )
+    signingConfigs {
+        create("stable") {
+            storeFile = stableKeystore
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+    val signing = if (stableKeystore.isFile) {
+        signingConfigs.getByName("stable")
+    } else {
+        logger.warn(
+            "contextcap-sub: $stableKeystore が無いので ~/.android/debug.keystore で署名する。" +
+                "端末の版と鍵が違うと上書きインストールできない",
+        )
+        signingConfigs.getByName("debug")
+    }
+
+    // 個人用の道具なので release も同じ鍵で署名する（:app と同じ方針）。
     buildTypes {
+        debug {
+            signingConfig = signing
+        }
         release {
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signing
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(

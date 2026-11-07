@@ -9,7 +9,23 @@ cd "$(dirname "$0")/.."
 PKG=app.imichat.contextcap.sub
 
 ./gradlew :sub:assembleDebug
-adb install -r sub/build/outputs/apk/debug/sub-debug.apk
+
+# 署名は :app と同じ固定の鍵（~/.android-keystores/contextcap-debug.keystore）でそろえている。
+# それでも端末の版と鍵が違って上書きできないときは、ここで止める。adb uninstall には進まない
+# （sub 自体はデータを持たないが、挙動を :app の install.sh とそろえ、署名の食い違いに気づけるようにする）。
+if ! out=$(adb install -r sub/build/outputs/apk/debug/sub-debug.apk 2>&1); then
+  echo "$out"
+  if grep -q INSTALL_FAILED_UPDATE_INCOMPATIBLE <<<"$out"; then
+    cat <<'MSG'
+
+署名の鍵が、端末に入っている版と違う。adb uninstall はせず、まず
+~/.android-keystores/contextcap-debug.keystore が端末の版の鍵か確かめる
+（keytool -list -v -keystore <鍵> -storepass android の SHA-256 が一致するか）。
+MSG
+  fi
+  exit 1
+fi
+echo "$out" | tail -1
 
 # アクセシビリティの ENABLED_ACCESSIBILITY_SERVICES を書き換えるのに必要。
 # 通常アプリには付かないので adb で付与する（再起動後も保持される）。
