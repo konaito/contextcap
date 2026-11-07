@@ -23,6 +23,11 @@ ROOT = Path(__file__).resolve().parent.parent
 INK = "#EDEDED"   # 図柄の色（PV・LP の文字色）
 GROUND = "#0A0A0A"  # 地の色（PV・LP の黒）
 
+# contextcap-sub（決済ガード）は本体アイコンを色反転したもの。INK/GROUND を RGB 反転した値。
+# sub 側の地は android/sub/.../res/values/colors.xml に GROUND_SUB と同じ色を手で持つ（app と同じ作法）。
+INK_SUB = "#121212"
+GROUND_SUB = "#F5F5F5"
+
 # 1024 の座標系で、中心 (512, 512) に対する図柄の寸法
 FRAME = 520        # ブラケットの外形（線の中心）
 ARM = 120          # ブラケットの腕の長さ
@@ -100,7 +105,7 @@ def menubar_icon():
 ANDROID_FRAME_DP = 46
 
 
-def android_vector(comment):
+def android_vector(comment, ink=INK):
     k = ANDROID_FRAME_DP / FRAME
     o = 54 - 512 * k
 
@@ -139,14 +144,14 @@ def android_vector(comment):
     paths = []
     for d in brackets():
         paths.append(
-            f'    <path\n        android:pathData="{tx(d)}"\n        android:strokeColor="{INK}"\n'
+            f'    <path\n        android:pathData="{tx(d)}"\n        android:strokeColor="{ink}"\n'
             f'        android:strokeWidth="{STROKE * k:.3f}"\n        android:strokeLineCap="round"\n'
             f'        android:strokeLineJoin="round" />'
         )
-    paths.append(f'    <path\n        android:pathData="{tx(rounded_rect(*BLOCK))}"\n        android:fillColor="{INK}" />')
+    paths.append(f'    <path\n        android:pathData="{tx(rounded_rect(*BLOCK))}"\n        android:fillColor="{ink}" />')
     for d in lines():
         paths.append(
-            f'    <path\n        android:pathData="{tx(d)}"\n        android:strokeColor="{INK}"\n'
+            f'    <path\n        android:pathData="{tx(d)}"\n        android:strokeColor="{ink}"\n'
             f'        android:strokeWidth="{LINE_W * k:.3f}"\n        android:strokeLineCap="round" />'
         )
     body = "\n\n".join(paths)
@@ -168,6 +173,7 @@ def check_android_safe_zone():
 def main():
     check_android_safe_zone()
     res = ROOT / "android/app/src/main/res/drawable"
+    sub_res = ROOT / "android/sub/src/main/res/drawable"
     outputs = {
         ROOT / "assets/icon.svg": app_icon(),
         ROOT / "assets/menubar.svg": menubar_icon(),
@@ -177,6 +183,15 @@ def main():
         ),
         res / "ic_launcher_monochrome.xml": android_vector(
             "  テーマアイコン用。前景と同じ図形で、系統色で塗り直されるので色は形を描くためだけのもの。"
+        ),
+        # contextcap-sub（決済ガード）は本体を色反転したアイコン。図形は同じで色だけ反転する。
+        sub_res / "ic_launcher_foreground.xml": android_vector(
+            "  contextcap-sub の前景。本体を色反転（INK_SUB）。地は @color/ic_launcher_background（GROUND_SUB）。",
+            ink=INK_SUB,
+        ),
+        sub_res / "ic_launcher_monochrome.xml": android_vector(
+            "  contextcap-sub のテーマアイコン用。前景と同じ図形。系統色で塗り直されるので色は形のためだけ。",
+            ink=INK_SUB,
         ),
     }
     for path, text in outputs.items():

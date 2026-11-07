@@ -1,11 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  sub のアイコンは ContextCap のアイコンを色反転したもの（scripts/make-sub-icon.py が生成）。
-  地は反転した薄い色、前景ビットマップも反転済み。monochrome は :app と同じ図形を流用する
-  （テーマアイコンは alpha だけ使うので色は関係ない）。
+  sub のアイコンは本体（撮影枠・行）を色反転したもの。前景・テーマアイコンとも
+  scripts/make-icons.py が INK_SUB で生成するベクタ。地は無地（GROUND_SUB、ic_launcher_background）。
 -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@color/ic_launcher_background" />
-    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+    <foreground android:drawable="@drawable/ic_launcher_foreground" />
     <monochrome android:drawable="@drawable/ic_launcher_monochrome" />
 </adaptive-icon>
