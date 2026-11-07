@@ -249,8 +249,9 @@ defaults delete app.imichat.contextcap StorageBudgetGB              # 戻す
 - 撮影: **ScreenCaptureKit** `SCScreenshotManager.captureImage`（macOS 14+）
 - ログイン時起動: **ServiceManagement** `SMAppService.mainApp`（macOS 13+）
 - 対応 OS: macOS 14 Sonoma 以降（開発環境は macOS 26）
-- アイコン: `../assets/icon.png`（1024 マスター）から `sips` + `iconutil` でビルドのたびに生成。
-  `.icns` はリポジトリに置かない
+- アイコン: `../assets/icon.svg` から `sips` + `iconutil` でビルドのたびに生成。
+  メニューバーのテンプレート画像も `../assets/menubar.svg` から作る。どちらも
+  `scripts/make-icons.py` の生成物で、`.icns` と PNG はリポジトリに置かない
 
 ```
 macos/
@@ -271,7 +272,7 @@ macos/
 ├── Resources/Info.plist        # LSUIElement=true、CFBundleIconFile=AppIcon
 └── scripts/
     └── build-app.sh            # swift build → ContextCap.app 生成 → /Applications へ
-                                # ../assets/icon.png から AppIcon.icns も生成する
+                                # ../assets/*.svg から AppIcon.icns と MenuBarIcon を生成する
 ```
 
 ## ビルドと起動
