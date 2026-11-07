@@ -128,8 +128,33 @@ SDK の場所は `local.properties` の `sdk.dir`。マシン固有なので git
 R8 + リソース shrink 有効での現在値は **1.8MB**（2026-08-16 実測。ほぼ全部が `classes.dex` の 1.6MB で、
 アイコンを含むリソースは 100KB 未満）。
 
-release も debug 鍵で署名している。個人用の道具なので、R8 を通した APK を
-そのまま実機で確認・運用できる方が都合がいい。
+debug も release も、リポジトリ外の固定の鍵 `~/.android-keystores/contextcap-debug.keystore` で署名する
+（`-Pcontextcap.keystore=<path>` で場所を変えられる）。個人用の道具なので、R8 を通した APK を
+そのまま実機で確認・運用できる方が都合がいい。鍵の形式は debug 鍵と同じ（パスワード `android`、
+別名 `androiddebugkey`）で、中身は 2026-11-04 に作られた `~/.android/debug.keystore` の写し
+（SHA-256 `5E:B2:8A:56:…:3E:79:99`）。鍵が無い Mac では `~/.android/debug.keystore` に戻り、ビルドが警告を出す。
+
+`~/.android/debug.keystore` に頼らないのは、AGP が無いと黙って作り直すから。2026-11-07 に、
+11-04 に作り直された鍵でビルドした版が端末の版に上書きできなかった（`INSTALL_FAILED_UPDATE_INCOMPATIBLE`）。
+
+### 署名の鍵が変わったとき
+
+アンインストールすると `Android/data/app.imichat.contextcap/files` の撮影データが全部消える。
+`install.sh` は署名の不一致で止まり、アンインストールはしない。入れ直すしかないときは次の順で進める
+（2026-11-07 に実機で通した手順）。
+
+1. `adb pull /sdcard/Android/data/app.imichat.contextcap/files <退避先>` で撮影データを退避する。
+   設定（合鍵・除外アプリ）は `adb exec-out run-as app.imichat.contextcap tar cf - shared_prefs` で退避する
+2. 端末とのファイル一覧（名前とサイズ）を突き合わせ、差分を取り込み直してからアンインストールする
+3. 新しい版を入れ、`shared_prefs/contextcap.xml` を
+   `adb exec-in run-as app.imichat.contextcap sh -c 'mkdir -p shared_prefs && cat > shared_prefs/contextcap.xml'`
+   で戻す。アクセシビリティは手でオンにし直す
+4. アプリが `ContextCap/` を作って撮影を始めてから、`adb push` で日付ディレクトリを書き戻す。
+   当日分の `ocr.jsonl` / `apps.jsonl` / `blackouts.jsonl` は上書きせず、旧版の内容の後ろに新しい行をつなげる
+
+`adb push` で置いたファイルは持ち主が shell（uid 2000）になる。それでもアプリは読めて、書き足せて、
+Retention で消せる（2026-11-07 に実機で確かめた）。`run-as` からは外部領域が見えないので、
+この確認は `run-as` ではできない。
 
 ## データの回収
 
