@@ -82,8 +82,10 @@ AccessibilityService 自体が system_server にバインドされた OS 管理�
 有効化すると即座に撮影が始まる。
 
 **アクセシビリティの有効化は adb だけでは完結しない。**
-`settings put secure enabled_accessibility_services` は Android 16 では反映されない
+`settings put secure enabled_accessibility_services` は Android 16 のエミュレータでは反映されない
 （`settings get` が `null` のまま）。UI 操作が必要。
+Android 17 の実機（Pixel 10 Pro Fold、2026-11-19）では、以前 UI で有効にしたことのある本体を
+`settings put` で戻すと 1 秒以内に `connected.` が出て撮影が再開した。初回の有効化を adb だけで済ませられるかは未検証。
 
 ### ツールチェーン
 

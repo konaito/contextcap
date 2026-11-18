@@ -72,4 +72,7 @@ android {
 
 dependencies {
     implementation("androidx.core:core-ktx:1.19.1")
+
+    // 前面判定（ResumedActivities）の JVM unit test 用。:app と同じ版
+    testImplementation("org.jetbrains.kotlin:kotlin-test-junit:2.2.10")
 }
