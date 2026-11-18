@@ -63,12 +63,41 @@ class ResumedActivitiesTest {
         assertFalse(s.anyResumed(sensitive))
     }
 
+    /** 同じクラスの別インスタンスへの入れ替わり（X・Instagram・Google Pay で実測した並び） */
     @Test
-    fun stoppedAlsoReleases() {
+    fun sameClassInstanceSwapKeepsNewInstance() {
+        val s = ResumedActivities().feed(
+            Event(40_700, RESUMED, payPay, "MiniAppActivity"),
+            Event(40_817, PAUSED, payPay, "MiniAppActivity"),
+            Event(40_818, RESUMED, payPay, "MiniAppActivity"),
+            Event(41_217, STOPPED, payPay, "MiniAppActivity"),
+        )
+        assertTrue(s.anyResumed(sensitive), "STOPPED は前のインスタンスの後始末で、新しいほうは RESUMED のまま")
+        s.feed(Event(50_000, PAUSED, payPay, "MiniAppActivity"))
+        assertFalse(s.anyResumed(sensitive))
+    }
+
+    /** PAUSED を経ずに STOPPED が来ることがある（10 日で 73 件） */
+    @Test
+    fun stoppedWithoutPauseReleases() {
         val s = ResumedActivities().feed(
             Event(1_000, RESUMED, payPay, "MainActivity"),
-            Event(2_000, STOPPED, payPay, "MainActivity"),
+            Event(3_000, STOPPED, payPay, "MainActivity"),
         )
+        assertFalse(s.anyResumed(sensitive))
+    }
+
+    /** 期限を過ぎた PAUSED は STOPPED の相手にしない（再開した同じインスタンスの PAUSED が残り続けない） */
+    @Test
+    fun stalePauseDoesNotAbsorbLaterStop() {
+        val s = ResumedActivities(pauseStopWindowMs = 10_000).feed(
+            Event(1_000, RESUMED, payPay, "MainActivity"),
+            Event(2_000, PAUSED, payPay, "MainActivity"),
+            Event(3_000, RESUMED, payPay, "MainActivity"),
+        )
+        assertTrue(s.anyResumed(sensitive))
+        // 2_000 の PAUSED は STOPPED にならないまま期限切れ。60_000 の STOPPED は RESUMED を外す
+        s.feed(Event(60_000, STOPPED, payPay, "MainActivity"))
         assertFalse(s.anyResumed(sensitive))
     }
 
